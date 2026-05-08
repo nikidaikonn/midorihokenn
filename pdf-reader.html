@@ -486,70 +486,29 @@ async function loadPDF(file){
   }
 }
 
-/* ─── テキスト再構築（縦書き・横書き両対応） ─── */
+/* ─── テキスト再構築 ─── */
+/* PDF.js 3.x はアイテムを読み取り順に返すため単純結合が最も確実 */
 function buildPageText(items){
-  /* strが空白のみのアイテムを除外しない（スペースとして必要な場合がある） */
-  items=items.filter(function(it){return typeof it.str==='string';});
-  if(!items.length) return '';
-
-  /* フォントサイズ（transform[0]の絶対値）の中央値 */
-  var fsizes=items.map(function(it){return Math.abs(it.transform[0])||Math.abs(it.transform[3])||10;});
-  fsizes.sort(function(a,b){return a-b;});
-  var medFS=fsizes[Math.floor(fsizes.length/2)]||10;
-
-  /* 縦書き判定：transform[1]（sin成分）が大きい */
-  var vertN=items.filter(function(it){return Math.abs(it.transform[1])>0.3;}).length;
-  var isVert=vertN>items.length*0.35;
-
-  var lines=[];
-  var THRESH=medFS*0.55;
-
-  if(isVert){
-    /* 縦書き：X降順で列を作り、列内はY降順 */
-    items.forEach(function(it){
-      var x=it.transform[4];
-      var found=false;
-      for(var i=0;i<lines.length;i++){
-        if(Math.abs(lines[i].key-x)<medFS*1.4){lines[i].items.push(it);found=true;break;}
-      }
-      if(!found) lines.push({key:x,items:[it]});
-    });
-    lines.sort(function(a,b){return b.key-a.key;});
-    lines.forEach(function(l){l.items.sort(function(a,b){return b.transform[5]-a.transform[5];});});
-  } else {
-    /* 横書き：Y降順で行を作り、行内はX昇順 */
-    items.forEach(function(it){
-      var y=it.transform[5];
-      var found=false;
-      for(var i=0;i<lines.length;i++){
-        if(Math.abs(lines[i].key-y)<THRESH){lines[i].items.push(it);found=true;break;}
-      }
-      if(!found) lines.push({key:y,items:[it]});
-    });
-    lines.sort(function(a,b){return b.key-a.key;});
-    lines.forEach(function(l){l.items.sort(function(a,b){return a.transform[4]-b.transform[4];});});
-  }
-
-  /* 行同士を結合。スペースが入っているか・大きなギャップがあれば改行 */
-  var result='';
-  lines.forEach(function(line){
-    var lineStr='';
-    line.items.forEach(function(it){lineStr+=it.str;});
-    /* 制御文字だけ除去 */
-    lineStr=lineStr.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\uFFFD]/g,'').trim();
-    if(lineStr) result+=lineStr+'\n';
-  });
-  return result;
+  var textItems=items.filter(function(it){return typeof it.str==='string';});
+  if(!textItems.length) return '';
+  var result=textItems.map(function(it){
+    return it.str+(it.hasEOL?'\n':'');
+  }).join('');
+  return result.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g,'');
 }
 
 /* ─── 文分割 ─── */
 function splitSents(text){
   if(!text||!text.trim()) return [];
-  /* 単独改行を結合、連続改行を段落区切りに */
   text=text.replace(/\r\n/g,'\n').replace(/\r/g,'\n')
            .replace(/\n{3,}/g,'\n\n')
            .replace(/([^\n。！？…\.\!\?])\n([^\n])/g,'$1$2');
-  var parts=text.split(/(?<=[。！？…]+)|(?<=[\.!?][ \n])/g);
+  var parts;
+  try{
+    parts=text.split(/(?<=[。！？…]+)|(?<=[\.,!?][ \n])/g);
+  }catch(e){
+    parts=[text];
+  }
   var res=[];
   parts.forEach(function(p){
     p.split(/\n\n+/).forEach(function(q){
@@ -557,6 +516,10 @@ function splitSents(text){
       if(t.length>0) res.push(t);
     });
   });
+  if(res.length===1&&res[0].length>400){
+    var byLine=text.split(/\n/).filter(function(l){return l.trim();});
+    if(byLine.length>1) return byLine;
+  }
   return res.length?res:(text.trim()?[text.trim()]:[]);
 }
 
