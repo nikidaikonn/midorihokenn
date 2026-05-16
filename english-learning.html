@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>PDF 英語学習</title>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.min.js" crossorigin="anonymous"></script>
+<style>
+/* ── THEMES ── */
+:root {
+  --bg:#0a0a0a; --surf:#141414; --surf2:#1c1c1c; --surf3:#242424;
+  --bdr:#2e2e2e; --txt:#f0f0f0; --dim:#909090; --muted:#505050;
+  --acc:#4a9eff; --acc-h:#6abfff; --acc-s:rgba(74,158,255,.14);
+  --grn:#4affa0; --yel:#ffd84a; --red:#ff4a6a;
+  --popup-shadow:0 12px 60px rgba(0,0,0,.7);
+}
+[data-theme="navy"]   { --bg:#06101e; --surf:#0b1a30; --surf2:#102240; --surf3:#152a50; --bdr:#1a3060; }
+[data-theme="forest"] { --bg:#060e08; --surf:#0a1a0c; --surf2:#0e2212; --surf3:#122a16; --bdr:#183820; }
+[data-theme="purple"] { --bg:#0c0610; --surf:#150a1e; --surf2:#1c1028; --surf3:#231632; --bdr:#301a48; }
+[data-theme="slate"]  { --bg:#161618; --surf:#1e1e22; --surf2:#26262c; --surf3:#2e2e36; --bdr:#3c3c46; }
+
+/* ── RESET ── */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',-apple-system,system-ui,sans-serif;font-size:14px;line-height:1.5}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:4px}
+
+/* ── HEADER ── */
+.hdr{height:54px;background:var(--surf);border-bottom:1px solid var(--bdr);display:flex;align-items:center;padding:0 18px;gap:14px;flex-shrink:0;z-index:200;position:relative}
+.logo{font-size:17px;font-weight:700;letter-spacing:-.5px;color:var(--acc);flex-shrink:0;white-space:nowrap}
+.logo em{color:var(--txt);font-style:normal;font-weight:300}
+.hdr-mid{flex:1;display:flex;align-items:center;justify-content:center;gap:6px}
+.mode-btn{background:var(--surf2);border:1px solid var(--bdr);color:var(--dim);border-radius:7px;padding:5px 14px;cursor:pointer;font-size:11px;letter-spacing:.06em;transition:all .15s;white-space:nowrap}
+.mode-btn.on{background:var(--acc);border-color:var(--acc);color:#fff;box-shadow:0 2px 12px rgba(74,158,255,.3)}
+.mode-btn:hover:not(.on){border-color:var(--acc);color:var(--acc)}
+.hdr-right{display:flex;align-items:center;gap:10px;margin-left:auto;flex-shrink:0}
+.theme-row{display:flex;align-items:center;gap:5px}
+.theme-lbl{font-size:10px;color:var(--muted);letter-spacing:.15em;text-transform:uppercase}
+.th-dot{width:17px;height:17px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:border-color .15s;flex-shrink:0}
+.th-dot.on{border-color:var(--txt)}
+.th-dot:hover:not(.on){border-color:var(--dim)}
+.vbadge{font-size:11px;color:var(--dim);background:var(--surf2);border:1px solid var(--bdr);border-radius:20px;padding:3px 11px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.vbadge:hover{border-color:var(--acc);color:var(--acc)}
+
+/* ── LAYOUT ── */
+.wrap{display:flex;height:calc(100vh - 54px);overflow:hidden}
+
+/* ── SIDEBAR ── */
+.sidebar{width:274px;background:var(--surf);border-right:1px solid var(--bdr);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
+.sb-sec{padding:13px 15px;border-bottom:1px solid var(--bdr)}
+.sec-lbl{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:9px}
+
+/* upload */
+.upload-box{border:1px dashed var(--bdr);border-radius:9px;padding:18px 10px;text-align:center;cursor:pointer;transition:all .18s;background:var(--surf2)}
+.upload-box:hover,.upload-box.drag{border-color:var(--acc);background:var(--acc-s)}
+.upload-box input{display:none}
+.u-icon{font-size:26px;margin-bottom:5px}
+.u-txt{font-size:11.5px;color:var(--dim);line-height:1.7}
+.u-txt strong{color:var(--acc);font-weight:500}
+.f-info{display:none;background:var(--surf2);border:1px solid var(--bdr);border-radius:8px;padding:8px 11px;font-size:11.5px;align-items:center;gap:7px;margin-top:8px}
+.f-info.on{display:flex}
+.f-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.f-pages{color:var(--muted);flex-shrink:0}
+
+/* page nav */
+.pg-row{display:flex;align-items:center;gap:5px}
+.pg-btn{background:var(--surf2);border:1px solid var(--bdr);color:var(--dim);border-radius:6px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;transition:all .15s;flex-shrink:0}
+.pg-btn:hover:not(:disabled){border-color:var(--acc);color:var(--acc)}
+.pg-btn:disabled{opacity:.3;cursor:not-allowed}
+.pg-disp{flex:1;background:var(--surf2);border:1px solid var(--bdr);border-radius:6px;height:30px;display:flex;align-items:center;justify-content:center;font-size:11.5px;color:var(--dim)}
+
+/* zoom */
+.zm-row{display:flex;align-items:center;gap:5px;margin-top:7px}
+.zm-btn{background:var(--surf2);border:1px solid var(--bdr);color:var(--dim);border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;transition:all .15s}
+.zm-btn:hover{border-color:var(--acc);color:var(--acc)}
+.zm-val{font-size:11px;color:var(--muted);min-width:38px;text-align:center}
+
+/* vocab list */
+.vlist-wrap{flex:1;overflow-y:auto;padding:10px 14px}
+.vlist-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.v-clear{font-size:10px;color:var(--muted);cursor:pointer;text-decoration:underline}
+.v-clear:hover{color:var(--red)}
+.v-empty{font-size:11.5px;color:var(--muted);text-align:center;padding:18px 0;line-height:1.8}
+.v-item{background:var(--surf2);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;margin-bottom:6px;cursor:pointer;transition:border-color .15s}
+.v-item:hover{border-color:var(--acc)}
+.v-word{font-size:12.5px;font-weight:600;color:var(--acc)}
+.v-phon{font-size:10px;color:var(--muted);margin-top:1px;font-style:italic}
+.v-pos{display:inline-block;font-size:9px;background:var(--surf3);color:var(--muted);border-radius:3px;padding:1px 5px;margin-top:2px}
+.v-def{font-size:11px;color:var(--dim);margin-top:3px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+
+/* ── MAIN ── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;background:var(--bg)}
+
+/* empty */
+.empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted)}
+.empty.gone{display:none}
+.e-ico{font-size:52px;opacity:.12}
+.e-ttl{font-size:15px;color:var(--dim)}
+.e-sub{font-size:12px;line-height:1.9;text-align:center}
+
+/* loading */
+.loading{position:absolute;inset:0;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:50;color:var(--dim);font-size:13px}
+.loading.on{display:flex}
+.spin{width:30px;height:30px;border:2px solid var(--bdr);border-top-color:var(--acc);border-radius:50%;animation:spin .75s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* PDF view */
+.pdf-view{flex:1;overflow:auto;display:flex;justify-content:center;padding:24px;background:var(--bg)}
+.pdf-view.gone{display:none}
+.pdf-wrap{position:relative;display:inline-block;box-shadow:0 4px 40px rgba(0,0,0,.5);flex-shrink:0}
+#pdfCanvas{display:block}
+
+/* text layer */
+#txtLayer{position:absolute;top:0;left:0;right:0;bottom:0;overflow:hidden;pointer-events:auto;user-select:text;line-height:1;text-align:initial}
+#txtLayer span{color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%}
+#txtLayer span::selection{background:rgba(74,158,255,.28);color:transparent}
+#txtLayer br{display:none}
+
+/* text mode */
+.txt-view{flex:1;overflow-y:auto;padding:32px 48px;display:none}
+.txt-view.on{display:block}
+.pg-lbl{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);padding-bottom:7px;margin:22px 0 10px;border-bottom:1px solid var(--bdr)}
+.pg-lbl:first-child{margin-top:0}
+.txt-body{font-size:16px;line-height:2.1;color:var(--dim);font-family:'Georgia','Times New Roman',serif}
+.tok{cursor:pointer;border-radius:3px;padding:1px 1px;transition:background .12s,color .12s;display:inline}
+.tok:hover{background:var(--acc-s);color:var(--txt)}
+.tok.saved{color:var(--acc)}
+.no-txt{font-size:11.5px;color:var(--muted);padding:6px 0}
+
+/* status bar */
+.sbar{height:30px;background:var(--surf);border-top:1px solid var(--bdr);display:flex;align-items:center;padding:0 14px;gap:8px;font-size:10.5px;color:var(--muted);flex-shrink:0}
+.sdot{width:5px;height:5px;border-radius:50%;background:var(--muted);flex-shrink:0}
+.sdot.ok{background:var(--grn);box-shadow:0 0 5px var(--grn);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── POPUP ── */
+.popup{position:fixed;z-index:1000;background:var(--surf);border:1px solid var(--bdr);border-radius:13px;padding:17px 19px 14px;width:320px;max-width:calc(100vw - 24px);max-height:72vh;overflow-y:auto;box-shadow:var(--popup-shadow);display:none;animation:popIn .14s ease-out}
+.popup.on{display:block}
+@keyframes popIn{from{opacity:0;transform:translateY(-7px) scale(.97)}to{opacity:1;transform:none}}
+.pop-close{position:absolute;top:11px;right:13px;width:22px;height:22px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;border-radius:4px;display:flex;align-items:center;justify-content:center;line-height:1;transition:all .12s}
+.pop-close:hover{background:var(--surf2);color:var(--txt)}
+.pop-word{font-size:24px;font-weight:700;color:var(--acc);line-height:1.1;padding-right:24px}
+.pop-phon{font-size:11.5px;color:var(--muted);margin-top:2px;font-style:italic}
+.pop-loading{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);padding:10px 0}
+.pop-pos{display:inline-block;font-size:9.5px;background:var(--acc-s);color:var(--acc);border-radius:4px;padding:2px 7px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin:8px 0 5px}
+.pop-def{font-size:12.5px;color:var(--dim);line-height:1.75;margin-bottom:5px}
+.pop-ex{font-size:11px;color:var(--muted);font-style:italic;padding-left:9px;border-left:2px solid var(--bdr);margin-bottom:7px;line-height:1.6}
+.pop-syn{font-size:10.5px;color:var(--muted);margin-bottom:5px}
+.pop-syn strong{color:var(--grn)}
+.pop-div{height:1px;background:var(--bdr);margin:9px 0}
+.pop-404{font-size:12.5px;color:var(--muted);text-align:center;padding:12px 0}
+.pop-actions{display:flex;gap:6px;margin-top:11px}
+.pop-btn{flex:1;background:var(--surf2);border:1px solid var(--bdr);color:var(--dim);border-radius:7px;padding:7px 6px;cursor:pointer;font-size:11px;letter-spacing:.04em;transition:all .15s;text-align:center;white-space:nowrap}
+.pop-btn:hover{border-color:var(--acc);color:var(--acc)}
+.pop-btn.pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:500}
+.pop-btn.pri:hover{opacity:.88}
+.pop-btn.done{background:var(--grn);border-color:var(--grn);color:#000;font-weight:500}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(60px);background:var(--surf2);border:1px solid var(--bdr);border-radius:9px;padding:8px 18px;font-size:12.5px;color:var(--txt);z-index:9999;transition:transform .22s;white-space:nowrap;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,.4)}
+.toast.on{transform:translateX(-50%) translateY(0)}
+
+/* ── RESPONSIVE ── */
+@media(max-width:700px){
+  .sidebar{width:220px}
+  .hdr-mid,.theme-lbl{display:none}
+  .txt-view{padding:18px 20px}
+}
+@media(max-width:480px){
+  .sidebar{display:none}
+  .pdf-view{padding:10px}
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="hdr">
+  <div class="logo">PDF<em>英語学習</em></div>
+
+  <div class="hdr-mid">
+    <button class="mode-btn on" id="btnPDF">📄 PDF表示</button>
+    <button class="mode-btn" id="btnTxt">📝 テキスト</button>
+  </div>
+
+  <div class="hdr-right">
+    <div class="theme-row">
+      <span class="theme-lbl">BG</span>
+      <div class="th-dot on" data-theme="" style="background:#0a0a0a" title="Black"></div>
+      <div class="th-dot" data-theme="navy" style="background:#06101e" title="Navy"></div>
+      <div class="th-dot" data-theme="forest" style="background:#060e08" title="Forest"></div>
+      <div class="th-dot" data-theme="purple" style="background:#0c0610" title="Purple"></div>
+      <div class="th-dot" data-theme="slate" style="background:#161618" title="Slate"></div>
+    </div>
+    <div class="vbadge" id="vbadge">単語帳 0</div>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sb-sec">
+      <div class="sec-lbl">PDFファイル</div>
+      <div class="upload-box" id="upBox">
+        <input type="file" id="pdfInput" accept=".pdf">
+        <div class="u-icon">📄</div>
+        <div class="u-txt"><strong>PDFをアップロード</strong><br>クリックまたはドロップ</div>
+      </div>
+      <div class="f-info" id="fInfo">
+        <span>📄</span>
+        <span class="f-name" id="fName"></span>
+        <span class="f-pages" id="fPages"></span>
+      </div>
+    </div>
+
+    <div class="sb-sec">
+      <div class="sec-lbl">ページ / ズーム</div>
+      <div class="pg-row">
+        <button class="pg-btn" id="btnPrev" disabled>◀</button>
+        <div class="pg-disp" id="pgDisp">— / —</div>
+        <button class="pg-btn" id="btnNext" disabled>▶</button>
+      </div>
+      <div class="zm-row">
+        <button class="zm-btn" id="btnZout">−</button>
+        <span class="zm-val" id="zmVal">100%</span>
+        <button class="zm-btn" id="btnZin">+</button>
+        <button class="zm-btn" id="btnZfit" title="フィット" style="font-size:12px">⊡</button>
+      </div>
+    </div>
+
+    <div class="sb-sec" style="border-bottom:none;padding-bottom:4px">
+      <div class="vlist-hdr">
+        <div class="sec-lbl" style="margin:0">単語帳</div>
+        <span class="v-clear" id="vClear">クリア</span>
+      </div>
+    </div>
+    <div class="vlist-wrap">
+      <div class="v-empty" id="vEmpty">単語をクリックして<br>意味を調べましょう</div>
+      <div id="vList"></div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <div class="loading" id="loading"><div class="spin"></div><span id="loadMsg">読み込み中...</span></div>
+
+    <!-- EMPTY -->
+    <div class="empty" id="emptyEl">
+      <div class="e-ico">📚</div>
+      <div class="e-ttl">PDFをアップロードして学習開始</div>
+      <div class="e-sub">英語のPDFを読み込むと<br>単語をクリックして意味が確認できます</div>
+    </div>
+
+    <!-- PDF VIEW -->
+    <div class="pdf-view gone" id="pdfView">
+      <div class="pdf-wrap" id="pdfWrap">
+        <canvas id="pdfCanvas"></canvas>
+        <div id="txtLayer"></div>
+      </div>
+    </div>
+
+    <!-- TEXT VIEW -->
+    <div class="txt-view" id="txtView"></div>
+
+    <div class="sbar">
+      <div class="sdot" id="sdot"></div>
+      <span id="stext">PDFファイルを読み込んでください</span>
+    </div>
+  </main>
+</div>
+
+<!-- POPUP -->
+<div class="popup" id="popup">
+  <button class="pop-close" id="popClose">✕</button>
+  <div id="popBody"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+'use strict';
+
+/* ── PDF.js ── */
+var VER = '3.11.174';
+if(typeof pdfjsLib !== 'undefined'){
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@'+VER+'/legacy/build/pdf.worker.min.js';
+}
+
+/* ── State ── */
+var pdfDoc = null, curPage = 1, totalPg = 0, scale = 1.0;
+var allText = {}; /* page# → string */
+var vocab = JSON.parse(localStorage.getItem('eng_vocab')||'[]');
+var viewMode = 'pdf'; /* 'pdf' | 'text' */
+var popupOpenTs = 0;
+
+/* ── Utils ── */
+function G(id){ return document.getElementById(id); }
+var toastTid;
+function toast(m){
+  var el=G('toast'); el.textContent=m; el.classList.add('on');
+  clearTimeout(toastTid); toastTid=setTimeout(function(){el.classList.remove('on');},2600);
+}
+function status(m,ok){
+  G('stext').textContent=m;
+  G('sdot').classList.toggle('ok',!!ok);
+}
+function esc(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ── Theme ── */
+document.querySelectorAll('.th-dot').forEach(function(d){
+  d.addEventListener('click',function(){
+    document.querySelectorAll('.th-dot').forEach(function(x){x.classList.remove('on');});
+    d.classList.add('on');
+    document.body.dataset.theme = d.dataset.theme;
+    localStorage.setItem('eng_theme', d.dataset.theme);
+  });
+});
+(function(){
+  var t = localStorage.getItem('eng_theme')||'';
+  document.body.dataset.theme = t;
+  var d = document.querySelector('.th-dot[data-theme="'+t+'"]');
+  if(d){ document.querySelectorAll('.th-dot').forEach(function(x){x.classList.remove('on');}); d.classList.add('on'); }
+})();
+
+/* ── Upload ── */
+var upBox = G('upBox'), pdfInput = G('pdfInput');
+upBox.addEventListener('click', function(){ pdfInput.click(); });
+pdfInput.addEventListener('change', function(){
+  if(pdfInput.files[0]) loadPDF(pdfInput.files[0]);
+  pdfInput.value='';
+});
+upBox.addEventListener('dragover',function(e){e.preventDefault();upBox.classList.add('drag');});
+upBox.addEventListener('dragleave',function(){upBox.classList.remove('drag');});
+upBox.addEventListener('drop',function(e){
+  e.preventDefault(); upBox.classList.remove('drag');
+  var f=e.dataTransfer.files[0];
+  if(f&&f.type==='application/pdf') loadPDF(f);
+  else toast('⚠ PDFファイルを選択してください');
+});
+document.addEventListener('dragover',function(e){e.preventDefault();});
+document.addEventListener('drop',function(e){
+  e.preventDefault();
+  var f=e.dataTransfer.files[0];
+  if(f&&f.type==='application/pdf') loadPDF(f);
+});
+
+/* ── Load PDF ── */
+async function loadPDF(file){
+  if(typeof pdfjsLib==='undefined'){ toast('⚠ PDF.js読み込みエラー'); return; }
+  G('emptyEl').classList.add('gone');
+  G('pdfView').classList.add('gone');
+  G('txtView').classList.remove('on');
+  G('loading').classList.add('on');
+  G('loadMsg').textContent = 'PDF読み込み中...';
+  status('読み込み中...',false);
+
+  try{
+    var ab = await file.arrayBuffer();
+    pdfDoc = await pdfjsLib.getDocument({
+      data: ab,
+      cMapUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@'+VER+'/cmaps/',
+      cMapPacked:true,
+      standardFontDataUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@'+VER+'/standard_fonts/'
+    }).promise;
+
+    totalPg = pdfDoc.numPages;
+    curPage = 1;
+    allText = {};
+
+    G('fName').textContent = file.name;
+    G('fPages').textContent = totalPg+'p';
+    G('fInfo').classList.add('on');
+    upBox.style.display = 'none';
+    G('pgDisp').textContent = '1 / '+totalPg;
+    G('btnPrev').disabled = true;
+    G('btnNext').disabled = totalPg<=1;
+
+    G('loadMsg').textContent = 'テキスト抽出中...';
+    await extractText();
+
+    G('loading').classList.remove('on');
+    await renderPage(curPage);
+    renderTextView();
+
+    if(viewMode==='pdf') showPDFMode();
+    else showTextMode();
+
+    status(totalPg+'ページ読み込み完了 ✓ 単語をクリックして意味を確認',true);
+    toast('✅ '+file.name+' を読み込みました');
+  }catch(e){
+    G('loading').classList.remove('on');
+    G('emptyEl').classList.remove('gone');
+    status('読み込み失敗',false);
+    toast('⚠ 読み込み失敗: '+e.message);
+    console.error(e);
+  }
+}
+
+/* ── Extract text from all pages ── */
+async function extractText(){
+  for(var p=1;p<=totalPg;p++){
+    try{
+      var page = await pdfDoc.getPage(p);
+      var tc = await page.getTextContent({includeMarkedContent:false});
+      allText[p] = tc.items
+        .filter(function(it){return typeof it.str==='string';})
+        .map(function(it){return it.str+(it.hasEOL?'\n':'');})
+        .join('');
+    }catch(e){}
+  }
+}
+
+/* ── Render PDF page to canvas + text layer ── */
+async function renderPage(pageNum){
+  if(!pdfDoc) return;
+  var page = await pdfDoc.getPage(pageNum);
+
+  /* Auto-fit on first load */
+  if(scale===1.0 && pageNum===1){
+    var vp0 = page.getViewport({scale:1.0});
+    var vw = G('pdfView').clientWidth - 48;
+    var scaleW = vw / vp0.width;
+    scale = Math.min(scaleW, 1.8);
+  }
+
+  var vp = page.getViewport({scale:scale});
+  var canvas = G('pdfCanvas');
+  var ctx = canvas.getContext('2d');
+  canvas.width = vp.width;
+  canvas.height = vp.height;
+
+  await page.render({canvasContext:ctx, viewport:vp}).promise;
+
+  /* Text layer */
+  var tl = G('txtLayer');
+  tl.innerHTML = '';
+  tl.style.width = vp.width+'px';
+  tl.style.height = vp.height+'px';
+  try{
+    var tc = await page.getTextContent({includeMarkedContent:false});
+    var task = pdfjsLib.renderTextLayer({
+      textContentSource: tc,
+      container: tl,
+      viewport: vp,
+      textDivs: []
+    });
+    if(task && task.promise) await task.promise;
+  }catch(e){ console.warn('textLayer:', e); }
+
+  G('pgDisp').textContent = pageNum+' / '+totalPg;
+  G('zmVal').textContent = Math.round(scale*100)+'%';
+  G('btnPrev').disabled = pageNum<=1;
+  G('btnNext').disabled = pageNum>=totalPg;
+}
+
+/* ── Text View ── */
+function renderTextView(){
+  var view = G('txtView');
+  view.innerHTML = '';
+  for(var p=1;p<=totalPg;p++){
+    var lbl = document.createElement('div');
+    lbl.className = 'pg-lbl';
+    lbl.textContent = 'PAGE '+p;
+    view.appendChild(lbl);
+
+    var text = allText[p]||'';
+    if(!text.trim()){
+      var nd = document.createElement('div'); nd.className='no-txt';
+      nd.textContent='(テキストなし)'; view.appendChild(nd); continue;
+    }
+    var body = document.createElement('div');
+    body.className = 'txt-body';
+    body.appendChild(makeTokens(text));
+    view.appendChild(body);
+  }
+}
+
+function makeTokens(text){
+  var frag = document.createDocumentFragment();
+  /* Split preserving whitespace and punctuation */
+  var re = /([a-zA-Z]{2,}(?:'[a-zA-Z]+)?)/g;
+  var last = 0, m;
+  while((m=re.exec(text))!==null){
+    if(m.index > last) frag.appendChild(document.createTextNode(text.slice(last,m.index)));
+    var word = m[1];
+    var wl = word.toLowerCase();
+    var span = document.createElement('span');
+    span.className = 'tok';
+    if(vocab.some(function(v){return v.word===wl;})) span.classList.add('saved');
+    span.textContent = word;
+    span.dataset.word = wl;
+    (function(w,el){
+      el.addEventListener('click',function(e){
+        e.stopPropagation();
+        openPopup(w, e);
+      });
+    })(wl, span);
+    frag.appendChild(span);
+    last = m.index + word.length;
+  }
+  if(last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+  return frag;
+}
+
+/* ── Word selection in PDF mode ── */
+document.addEventListener('mouseup', function(e){
+  if(!pdfDoc || viewMode!=='pdf') return;
+  if(G('popup').contains(e.target)) return;
+  setTimeout(function(){
+    var sel = window.getSelection();
+    if(!sel || sel.rangeCount===0) return;
+    var raw = sel.toString().trim();
+    var m = raw.match(/[a-zA-Z]{2,}/);
+    if(!m) return;
+    var word = m[0].toLowerCase();
+    openPopup(word, e);
+  }, 20);
+});
+
+document.addEventListener('touchend', function(e){
+  if(!pdfDoc || viewMode!=='pdf') return;
+  if(G('popup').contains(e.target)) return;
+  var touch = e.changedTouches[0];
+  setTimeout(function(){
+    var sel = window.getSelection();
+    if(!sel) return;
+    var raw = sel.toString().trim();
+    var m = raw.match(/[a-zA-Z]{2,}/);
+    if(!m) return;
+    openPopup(m[0].toLowerCase(), {clientX:touch.clientX, clientY:touch.clientY});
+  }, 80);
+});
+
+/* ── Popup ── */
+async function openPopup(word, evt){
+  if(!word || word.length<2) return;
+  popupOpenTs = Date.now();
+
+  var popup = G('popup');
+  G('popBody').innerHTML =
+    '<div class="pop-word">'+esc(word)+'</div>'+
+    '<div class="pop-loading"><div class="spin" style="width:14px;height:14px;border-width:1.5px"></div>調べています...</div>';
+  popup.classList.add('on');
+  posPopup(evt);
+
+  try{
+    var data = await fetchDef(word);
+    renderPopup(word, data, evt);
+  }catch(e){
+    G('popBody').innerHTML =
+      '<div class="pop-word">'+esc(word)+'</div>'+
+      '<div class="pop-404">❌ 意味が見つかりませんでした<br><span style="font-size:10px">英単語以外または辞書にない語</span></div>';
+    posPopup(evt);
+  }
+}
+
+async function fetchDef(word){
+  var res = await fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+encodeURIComponent(word));
+  if(!res.ok) throw new Error('not found');
+  var json = await res.json();
+  if(!Array.isArray(json)||!json.length) throw new Error('empty');
+  return json[0];
+}
+
+function renderPopup(word, data, evt){
+  var isSaved = vocab.some(function(v){return v.word===word;});
+  var html = '';
+  html += '<div class="pop-word">'+esc(data.word||word)+'</div>';
+  var phon = data.phonetic || (data.phonetics||[]).filter(function(p){return p.text;}).map(function(p){return p.text;})[0]||'';
+  if(phon) html += '<div class="pop-phon">'+esc(phon)+'</div>';
+
+  (data.meanings||[]).slice(0,3).forEach(function(m,i){
+    if(i>0) html += '<div class="pop-div"></div>';
+    html += '<div class="pop-pos">'+esc(m.partOfSpeech||'')+'</div>';
+    (m.definitions||[]).slice(0,2).forEach(function(d,di){
+      html += '<div class="pop-def">'+(di+1)+'. '+esc(d.definition||'')+'</div>';
+      if(d.example) html += '<div class="pop-ex">"'+esc(d.example)+'"</div>';
+    });
+    if((m.synonyms||[]).length>0){
+      html += '<div class="pop-syn">類義語: <strong>'+m.synonyms.slice(0,4).map(esc).join(', ')+'</strong></div>';
+    }
+  });
+
+  html += '<div class="pop-actions">';
+  if(isSaved){
+    html += '<button class="pop-btn done">✓ 保存済み</button>';
+  }else{
+    html += '<button class="pop-btn pri" id="popSave">＋ 単語帳に保存</button>';
+  }
+  html += '</div>';
+
+  G('popBody').innerHTML = html;
+  posPopup(evt);
+
+  var saveBtn = G('popSave');
+  if(saveBtn){
+    saveBtn.addEventListener('click',function(){
+      saveVocab(word, data);
+      saveBtn.className='pop-btn done';
+      saveBtn.textContent='✓ 保存済み';
+    });
+  }
+}
+
+function posPopup(evt){
+  var popup = G('popup');
+  var pw = 320, ph = popup.scrollHeight||220;
+  var x = evt.clientX, y = evt.clientY;
+  if(x+pw+14 > window.innerWidth) x = window.innerWidth-pw-14;
+  if(x < 8) x=8;
+  y = (y+ph+20 > window.innerHeight) ? y-ph-8 : y+16;
+  if(y<8) y=8;
+  popup.style.left = x+'px';
+  popup.style.top  = y+'px';
+}
+
+G('popClose').addEventListener('click',function(){ G('popup').classList.remove('on'); });
+document.addEventListener('click',function(e){
+  if(Date.now()-popupOpenTs < 200) return;
+  var popup = G('popup');
+  if(popup.classList.contains('on') && !popup.contains(e.target)){
+    popup.classList.remove('on');
+  }
+});
+document.addEventListener('keydown',function(e){ if(e.key==='Escape') G('popup').classList.remove('on'); });
+
+/* ── Save / Vocab ── */
+function saveVocab(word, data){
+  if(vocab.some(function(v){return v.word===word;})) return;
+  var m = (data.meanings||[])[0]||{};
+  var d = (m.definitions||[])[0]||{};
+  var phon = data.phonetic || (data.phonetics||[]).filter(function(p){return p.text;}).map(function(p){return p.text;})[0]||'';
+  vocab.unshift({
+    word:word, phonetic:phon,
+    pos:m.partOfSpeech||'', definition:d.definition||''
+  });
+  localStorage.setItem('eng_vocab',JSON.stringify(vocab));
+  /* mark in text view */
+  document.querySelectorAll('.tok[data-word="'+word+'"]').forEach(function(el){
+    el.classList.add('saved');
+  });
+  renderVocab(); updateVBadge();
+  toast('💾 "'+word+'" を単語帳に保存しました');
+}
+
+function renderVocab(){
+  var list = G('vList'), empty = G('vEmpty');
+  if(!vocab.length){ empty.style.display=''; list.innerHTML=''; return; }
+  empty.style.display='none'; list.innerHTML='';
+  vocab.forEach(function(v){
+    var div=document.createElement('div'); div.className='v-item';
+    div.innerHTML=
+      '<div class="v-word">'+esc(v.word)+'</div>'+
+      (v.phonetic?'<div class="v-phon">'+esc(v.phonetic)+'</div>':'')+
+      (v.pos?'<span class="v-pos">'+esc(v.pos)+'</span>':'')+
+      (v.definition?'<div class="v-def">'+esc(v.definition)+'</div>':'');
+    (function(vv){
+      div.addEventListener('click',function(){
+        openPopup(vv.word, {clientX:window.innerWidth/2, clientY:window.innerHeight/2});
+      });
+    })(v);
+    list.appendChild(div);
+  });
+}
+function updateVBadge(){ G('vbadge').textContent='単語帳 '+vocab.length; }
+G('vbadge').addEventListener('click',function(){ G('vList').scrollIntoView({behavior:'smooth'}); });
+
+G('vClear').addEventListener('click',function(){
+  if(!vocab.length) return;
+  if(!confirm('単語帳をクリアしますか?')) return;
+  vocab=[]; localStorage.setItem('eng_vocab','[]');
+  document.querySelectorAll('.tok.saved').forEach(function(el){el.classList.remove('saved');});
+  renderVocab(); updateVBadge();
+  toast('単語帳をクリアしました');
+});
+
+/* ── Page Nav ── */
+G('btnPrev').addEventListener('click',function(){
+  if(curPage>1){ curPage--; renderPage(curPage); G('popup').classList.remove('on'); }
+});
+G('btnNext').addEventListener('click',function(){
+  if(curPage<totalPg){ curPage++; renderPage(curPage); G('popup').classList.remove('on'); }
+});
+document.addEventListener('keydown',function(e){
+  if(!pdfDoc||viewMode!=='pdf') return;
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+  if(e.key==='ArrowRight'||e.key==='ArrowDown'){
+    if(curPage<totalPg){curPage++;renderPage(curPage);}
+  }else if(e.key==='ArrowLeft'||e.key==='ArrowUp'){
+    if(curPage>1){curPage--;renderPage(curPage);}
+  }
+});
+
+/* ── Zoom ── */
+G('btnZin').addEventListener('click',function(){
+  scale=Math.min(scale*1.2,3.0); renderPage(curPage);
+});
+G('btnZout').addEventListener('click',function(){
+  scale=Math.max(scale/1.2,0.3); renderPage(curPage);
+});
+G('btnZfit').addEventListener('click',function(){
+  if(!pdfDoc) return;
+  scale=1.0; /* reset then auto-fit will recalc — force recalc */
+  pdfDoc.getPage(curPage).then(function(page){
+    var vp0=page.getViewport({scale:1.0});
+    var vw=G('pdfView').clientWidth-48;
+    scale=Math.min(vw/vp0.width,1.8);
+    renderPage(curPage);
+  });
+});
+
+/* ── Mode Switch ── */
+function showPDFMode(){
+  viewMode='pdf';
+  G('btnPDF').classList.add('on'); G('btnTxt').classList.remove('on');
+  G('pdfView').classList.remove('gone');
+  G('txtView').classList.remove('on');
+}
+function showTextMode(){
+  viewMode='text';
+  G('btnTxt').classList.add('on'); G('btnPDF').classList.remove('on');
+  G('pdfView').classList.add('gone');
+  G('txtView').classList.add('on');
+}
+G('btnPDF').addEventListener('click',function(){ if(pdfDoc) showPDFMode(); });
+G('btnTxt').addEventListener('click',function(){ if(pdfDoc) showTextMode(); });
+
+/* ── Init ── */
+renderVocab();
+updateVBadge();
+
+})();
+</script>
+</body>
+</html>
