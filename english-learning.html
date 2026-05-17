@@ -132,30 +132,51 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',-apple-system,
 .no-txt{font-size:11.5px;color:var(--muted);padding:6px 0}
 
 /* ── QUIZ VIEW ── */
-.quiz-view{flex:1;overflow-y:auto;display:none;flex-direction:column;align-items:center;padding:24px 20px;gap:14px}
+.quiz-view{flex:1;overflow-y:auto;display:none;flex-direction:column;align-items:center;padding:18px 16px 14px;gap:11px}
 .quiz-view.on{display:flex}
-#quizInner{width:100%;max-width:520px;display:flex;flex-direction:column;align-items:center;gap:14px}
-.quiz-top-row{display:flex;align-items:center;justify-content:space-between;width:100%}
-.quiz-prog{font-size:11px;color:var(--muted);letter-spacing:.08em}
-.quiz-score{font-size:12px;color:var(--grn);font-weight:600}
-.quiz-q-area{width:100%;background:var(--surf);border:1px solid var(--bdr);border-radius:14px;padding:28px 24px;text-align:center}
-.quiz-q-lbl{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
-.quiz-q-word{font-size:36px;font-weight:700;color:var(--acc);letter-spacing:-.5px;line-height:1.1}
-.quiz-q-phon{font-size:12px;color:var(--muted);margin-top:6px;font-style:italic}
-.quiz-choices{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%}
-.choice-btn{background:var(--surf);border:2px solid var(--bdr);color:var(--txt);border-radius:10px;padding:14px 12px;cursor:pointer;font-size:12.5px;line-height:1.5;text-align:left;transition:all .15s;min-height:64px;width:100%;word-break:break-word}
-.choice-btn:hover:not(:disabled){border-color:var(--acc);background:var(--acc-s)}
-.choice-btn.correct{border-color:var(--grn)!important;background:rgba(74,255,160,.1);color:var(--grn)}
-.choice-btn.wrong{border-color:var(--red)!important;background:rgba(255,74,106,.09);color:var(--red)}
+#quizInner{width:100%;max-width:520px;display:flex;flex-direction:column;align-items:stretch;gap:11px}
+/* progress dots */
+.qprog-wrap{display:flex;flex-wrap:wrap;gap:5px;justify-content:center}
+.qprog-dot{display:flex;flex-direction:column;align-items:center;font-size:11px;color:var(--muted);background:var(--surf2);border:1px solid var(--bdr);border-radius:6px;padding:3px 7px;cursor:pointer;min-width:30px;transition:all .12s;line-height:1.4;user-select:none}
+.qprog-dot:hover{border-color:var(--acc)}
+.qprog-dot.qprog-cur{border-color:var(--acc);color:var(--acc);font-weight:700}
+.qprog-dot.qprog-ans{background:var(--acc-s);border-color:var(--acc);color:var(--acc)}
+.qprog-dot.qprog-ok{background:rgba(74,255,160,.1);border-color:var(--grn);color:var(--grn)}
+.qprog-dot.qprog-ng{background:rgba(255,74,106,.07);border-color:var(--red);color:var(--red)}
+.qprog-sub{font-size:9px;line-height:1}
+/* question */
+.quiz-q-area{background:var(--surf);border:1px solid var(--bdr);border-radius:14px;padding:20px 22px;text-align:center}
+.quiz-q-num{display:flex;align-items:center;justify-content:center;gap:10px;font-size:12px;color:var(--muted);margin-bottom:8px}
+.quiz-q-result{font-size:30px;font-weight:900;line-height:1;color:var(--red)}
+.quiz-q-lbl{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.quiz-q-word{font-size:34px;font-weight:700;color:var(--acc);letter-spacing:-.5px;line-height:1.1}
+.quiz-q-phon{font-size:12px;color:var(--muted);margin-top:5px;font-style:italic}
+/* choices */
+.quiz-choices{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.choice-btn{position:relative;background:var(--surf);border:2px solid var(--bdr);color:var(--txt);border-radius:10px;padding:12px 36px 12px 12px;cursor:pointer;font-size:12.5px;line-height:1.5;text-align:left;transition:all .15s;min-height:60px;width:100%;word-break:break-word}
+.choice-btn:hover:not(:disabled):not(.selected):not(.correct):not(.wrong){border-color:var(--acc);background:var(--acc-s)}
+.choice-btn.selected{border-color:var(--acc);background:var(--acc-s)}
+.choice-btn.correct{border-color:var(--grn)!important;background:rgba(74,255,160,.09)}
+.choice-btn.wrong{border-color:var(--red)!important;background:rgba(255,74,106,.07)}
 .choice-btn:disabled{cursor:default}
-.quiz-next{background:var(--acc);border:none;color:#fff;border-radius:9px;padding:12px 36px;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.04em;opacity:0;pointer-events:none;transition:opacity .2s;align-self:center}
-.quiz-next.on{opacity:1;pointer-events:auto}
+.choice-mark{position:absolute;top:50%;right:8px;transform:translateY(-50%);font-size:22px;font-weight:900;line-height:1;color:var(--red)}
+/* bottom controls */
+.quiz-bottom{display:flex;flex-direction:column;align-items:stretch;gap:9px}
+.quiz-nav{display:flex;align-items:center;gap:9px}
+.quiz-nav-btn{background:var(--surf2);border:1px solid var(--bdr);color:var(--dim);border-radius:7px;width:38px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;flex-shrink:0;transition:all .15s}
+.quiz-nav-btn:hover:not(:disabled){border-color:var(--acc);color:var(--acc)}
+.quiz-nav-btn:disabled{opacity:.3;cursor:not-allowed}
+.quiz-nav-cnt{flex:1;text-align:center;font-size:11.5px;color:var(--muted)}
+.quiz-check-btn{background:var(--acc);border:none;color:#fff;border-radius:9px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s;letter-spacing:.04em}
+.quiz-check-btn:hover{opacity:.88}
+.quiz-check-btn.off{opacity:.3;pointer-events:none}
+.quiz-restart-btn{background:var(--surf2);border:1px solid var(--bdr);color:var(--dim);border-radius:9px;padding:11px;font-size:13px;cursor:pointer;transition:all .15s;text-align:center}
+.quiz-restart-btn:hover{border-color:var(--acc);color:var(--acc)}
+/* score */
+.quiz-score-row{text-align:center;font-size:26px;font-weight:700;color:var(--acc);padding:4px 0}
+.quiz-score-sub{font-size:11.5px;color:var(--muted);text-align:center}
+/* empty */
 .quiz-empty{text-align:center;color:var(--muted);font-size:13px;line-height:2.2;padding:40px 20px}
-.quiz-finish{text-align:center;padding:40px 20px;width:100%}
-.quiz-finish-score{font-size:52px;font-weight:700;color:var(--acc);line-height:1;margin:10px 0 4px}
-.quiz-finish-lbl{font-size:14px;color:var(--dim)}
-.quiz-restart{background:var(--acc);border:none;color:#fff;border-radius:9px;padding:11px 32px;font-size:13px;font-weight:600;cursor:pointer;margin-top:20px;transition:opacity .15s}
-.quiz-restart:hover{opacity:.85}
 
 /* status bar */
 .sbar{height:30px;background:var(--surf);border-top:1px solid var(--bdr);display:flex;align-items:center;padding:0 14px;gap:8px;font-size:10.5px;color:var(--muted);flex-shrink:0}
@@ -902,9 +923,9 @@ G('btnTxt').addEventListener('click', function(){ if(pdfDoc) showTextMode(); });
 
 /* ── QUIZ ── */
 var quizQuestions = [];
+var quizAnswers   = [];   /* -1 = unanswered */
 var quizIdx       = 0;
-var quizScore     = 0;
-var quizAnswered  = false;
+var quizChecked   = false;
 
 function quizShuffle(arr){
   for(var i=arr.length-1;i>0;i--){
@@ -920,8 +941,8 @@ function buildQuizQuestions(){
   return pool.map(function(item){
     var others=quizShuffle(pool.filter(function(x){ return x.word!==item.word; }));
     var choices=quizShuffle(others.slice(0,3).map(function(x){ return x.definition; }).concat([item.definition]));
-    return {word:item.word,phonetic:item.phonetic||'',correct:item.definition,
-            choices:choices,correctIdx:choices.indexOf(item.definition)};
+    return {word:item.word, phonetic:item.phonetic||'', correct:item.definition,
+            choices:choices, correctIdx:choices.indexOf(item.definition)};
   });
 }
 function startQuiz(){
@@ -933,64 +954,127 @@ function startQuiz(){
     return;
   }
   quizQuestions=buildQuizQuestions();
-  quizIdx=0; quizScore=0; quizAnswered=false;
+  quizAnswers=quizQuestions.map(function(){ return -1; });
+  quizIdx=0; quizChecked=false;
   renderQuizQ();
 }
 function renderQuizQ(){
   var q=quizQuestions[quizIdx], total=quizQuestions.length;
-  quizAnswered=false;
+  var userAns=quizAnswers[quizIdx];
+  var doneCount=quizAnswers.filter(function(a){ return a!==-1; }).length;
+  var allDone=(doneCount===total);
+
+  /* progress dots */
+  var progHtml=quizQuestions.map(function(qi,i){
+    var a=quizAnswers[i];
+    var cls='qprog-dot', sub='';
+    if(quizChecked){
+      var ok=(a===quizQuestions[i].correctIdx);
+      cls+=(ok?' qprog-ok':' qprog-ng');
+      sub='<span class="qprog-sub">'+(ok?'○':'✕')+'</span>';
+    } else if(a!==-1){
+      cls+=' qprog-ans';
+    }
+    if(i===quizIdx) cls+=' qprog-cur';
+    return '<span class="'+cls+'" data-qi="'+i+'">('+( i+1 )+')'+sub+'</span>';
+  }).join('');
+
+  /* choices */
+  var choicesHtml=q.choices.map(function(c,i){
+    var cls='choice-btn', badge='', disabled='';
+    if(quizChecked){
+      disabled='disabled';
+      if(i===q.correctIdx){
+        cls+=' correct';
+        badge='<span class="choice-mark">○</span>';
+      } else if(i===userAns){
+        cls+=' wrong';
+        badge='<span class="choice-mark">✕</span>';
+      }
+    } else {
+      if(i===userAns) cls+=' selected';
+    }
+    return '<button class="'+cls+'" data-cidx="'+i+'" '+disabled+'>'+badge+esc(c)+'</button>';
+  }).join('');
+
+  /* result under question number */
+  var qResult='';
+  if(quizChecked && userAns!==-1){
+    qResult='<span class="quiz-q-result">'+(userAns===q.correctIdx?'○':'✕')+'</span>';
+  }
+
+  /* score (shown during review) */
+  var scoreHtml='';
+  if(quizChecked){
+    var score=quizAnswers.filter(function(a,i){ return a===quizQuestions[i].correctIdx; }).length;
+    scoreHtml=
+      '<div class="quiz-score-row">'+score+' / '+total+'</div>'+
+      '<div class="quiz-score-sub">正解率 '+Math.round(score/total*100)+'%</div>';
+  }
+
   G('quizInner').innerHTML=
-    '<div class="quiz-top-row">'+
-      '<span class="quiz-prog">'+(quizIdx+1)+' / '+total+'</span>'+
-      '<span class="quiz-score">✓ '+quizScore+'</span>'+
-    '</div>'+
+    '<div class="qprog-wrap">'+progHtml+'</div>'+
     '<div class="quiz-q-area">'+
+      '<div class="quiz-q-num"><span>('+(quizIdx+1)+')</span>'+qResult+'</div>'+
       '<div class="quiz-q-lbl">この単語の意味は？</div>'+
       '<div class="quiz-q-word">'+esc(q.word)+'</div>'+
       (q.phonetic?'<div class="quiz-q-phon">'+esc(q.phonetic)+'</div>':'')+
     '</div>'+
-    '<div class="quiz-choices">'+
-      q.choices.map(function(c,i){
-        return '<button class="choice-btn" data-cidx="'+i+'">'+esc(c)+'</button>';
-      }).join('')+
-    '</div>'+
-    '<button class="quiz-next" id="quizNextBtn">'+
-      (quizIdx+1>=total?'結果を見る →':'次の問題 →')+
-    '</button>';
-  G('quizInner').querySelectorAll('.choice-btn').forEach(function(btn){
-    btn.addEventListener('click',function(){ quizPick(parseInt(btn.dataset.cidx,10)); });
-  });
-  G('quizNextBtn').addEventListener('click',quizNext);
-}
-function quizPick(idx){
-  if(quizAnswered) return;
-  quizAnswered=true;
-  var q=quizQuestions[quizIdx];
-  if(idx===q.correctIdx) quizScore++;
-  G('quizInner').querySelectorAll('.choice-btn').forEach(function(btn){
-    var cidx=parseInt(btn.dataset.cidx,10);
-    btn.disabled=true;
-    if(cidx===q.correctIdx) btn.classList.add('correct');
-    else if(cidx===idx)     btn.classList.add('wrong');
-  });
-  var nb=G('quizNextBtn');
-  if(nb){ nb.textContent=(quizIdx+1>=quizQuestions.length)?'結果を見る →':'次の問題 →'; nb.classList.add('on'); }
-}
-function quizNext(){
-  quizIdx++;
-  if(quizIdx>=quizQuestions.length){ quizFinish(); return; }
-  renderQuizQ();
-}
-function quizFinish(){
-  var total=quizQuestions.length, pct=Math.round(quizScore/total*100);
-  G('quizInner').innerHTML=
-    '<div class="quiz-finish">'+
-      '<div style="font-size:44px">'+(pct>=80?'🎉':pct>=60?'👍':'📚')+'</div>'+
-      '<div class="quiz-finish-score">'+quizScore+' / '+total+'</div>'+
-      '<div class="quiz-finish-lbl">正解率 '+pct+'%</div>'+
-      '<button class="quiz-restart" id="quizRestartBtn">もう一度</button>'+
+    '<div class="quiz-choices">'+choicesHtml+'</div>'+
+    scoreHtml+
+    '<div class="quiz-bottom">'+
+      '<div class="quiz-nav">'+
+        '<button class="quiz-nav-btn" id="quizPrevBtn"'+(quizIdx===0?' disabled':'')+'>◀</button>'+
+        '<span class="quiz-nav-cnt">'+doneCount+' / '+total+' 回答済み</span>'+
+        '<button class="quiz-nav-btn" id="quizNextBtn"'+(quizIdx>=total-1?' disabled':'')+'>▶</button>'+
+      '</div>'+
+      (quizChecked?
+        '<button class="quiz-restart-btn" id="quizRestartBtn">もう一度</button>'
+      :
+        '<button class="quiz-check-btn'+(allDone?'':' off')+'" id="quizCheckBtn">答え合わせ</button>'
+      )+
     '</div>';
-  G('quizRestartBtn').addEventListener('click',startQuiz);
+
+  /* events */
+  if(!quizChecked){
+    G('quizInner').querySelectorAll('.choice-btn').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        quizSelect(parseInt(btn.dataset.cidx,10));
+      });
+    });
+    var cb=G('quizCheckBtn');
+    if(cb && allDone) cb.addEventListener('click',quizDoCheck);
+  }
+  G('quizInner').querySelectorAll('.qprog-dot').forEach(function(dot){
+    dot.addEventListener('click',function(){ quizIdx=parseInt(dot.dataset.qi,10); renderQuizQ(); });
+  });
+  var pb=G('quizPrevBtn'), nb=G('quizNextBtn');
+  if(pb) pb.addEventListener('click',function(){ quizIdx--; renderQuizQ(); });
+  if(nb) nb.addEventListener('click',function(){ quizIdx++; renderQuizQ(); });
+  var rb=G('quizRestartBtn');
+  if(rb) rb.addEventListener('click',startQuiz);
+}
+function quizSelect(idx){
+  if(quizChecked) return;
+  quizAnswers[quizIdx]=idx;
+  renderQuizQ();
+  /* auto-advance to next unanswered */
+  var next=-1;
+  for(var i=quizIdx+1;i<quizQuestions.length;i++){
+    if(quizAnswers[i]===-1){ next=i; break; }
+  }
+  if(next===-1){
+    for(var k=0;k<quizIdx;k++){
+      if(quizAnswers[k]===-1){ next=k; break; }
+    }
+  }
+  if(next!==-1){
+    setTimeout(function(){ quizIdx=next; renderQuizQ(); },280);
+  }
+}
+function quizDoCheck(){
+  quizChecked=true; quizIdx=0;
+  renderQuizQ();
 }
 function showQuizMode(){
   viewMode='quiz';
