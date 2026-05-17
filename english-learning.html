@@ -63,6 +63,8 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',-apple-system,
 .f-info.on{display:flex}
 .f-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .f-pages{color:var(--muted);flex-shrink:0}
+.f-reup{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 3px;border-radius:3px;line-height:1;flex-shrink:0;transition:color .12s}
+.f-reup:hover{color:var(--acc)}
 
 /* page nav */
 .pg-row{display:flex;align-items:center;gap:5px}
@@ -107,12 +109,12 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',-apple-system,
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* PDF view */
-.pdf-view{flex:1;overflow:auto;display:flex;justify-content:center;padding:24px;background:var(--bg)}
+.pdf-view{flex:1;overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:24px;background:var(--bg)}
 .pdf-view.gone{display:none}
 .pdf-wrap{position:relative;display:inline-block;box-shadow:0 4px 40px rgba(0,0,0,.5);flex-shrink:0}
 #pdfCanvas{display:block}
 
-/* text layer */
+/* text layer — matches PDF.js expected structure */
 #txtLayer{position:absolute;top:0;left:0;right:0;bottom:0;overflow:hidden;pointer-events:auto;user-select:text;line-height:1;text-align:initial}
 #txtLayer span{color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%}
 #txtLayer span::selection{background:rgba(74,158,255,.28);color:transparent}
@@ -208,10 +210,12 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',-apple-system,
         <div class="u-icon">📄</div>
         <div class="u-txt"><strong>PDFをアップロード</strong><br>クリックまたはドロップ</div>
       </div>
+      <!-- FIX: Added re-upload button so user can change PDF after loading -->
       <div class="f-info" id="fInfo">
         <span>📄</span>
         <span class="f-name" id="fName"></span>
         <span class="f-pages" id="fPages"></span>
+        <button class="f-reup" id="btnReup" title="別のPDFを開く">↺</button>
       </div>
     </div>
 
@@ -283,7 +287,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',-apple-system,
 (function(){
 'use strict';
 
-/* ── PDF.js ── */
+/* ── PDF.js setup ── */
 var VER = '3.11.174';
 if(typeof pdfjsLib !== 'undefined'){
   pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -291,11 +295,20 @@ if(typeof pdfjsLib !== 'undefined'){
 }
 
 /* ── State ── */
-var pdfDoc = null, curPage = 1, totalPg = 0, scale = 1.0;
-var allText = {}; /* page# → string */
-var vocab = JSON.parse(localStorage.getItem('eng_vocab')||'[]');
-var viewMode = 'pdf'; /* 'pdf' | 'text' */
+var pdfDoc     = null;
+var curPage    = 1;
+var totalPg    = 0;
+var scale      = 1.2;
+var allText    = {};
+/* FIX: wrap JSON.parse in try-catch — corrupted localStorage must not crash the app */
+var vocab = (function(){
+  try{ return JSON.parse(localStorage.getItem('eng_vocab')||'[]'); }
+  catch(e){ return []; }
+})();
+var viewMode   = 'pdf';
 var popupOpenTs = 0;
+var canvasRenderTask = null; /* FIX: track active canvas render for cancellation */
+var isLoading  = false;     /* FIX: prevent double-load */
 
 /* ── Utils ── */
 function G(id){ return document.getElementById(id); }
@@ -304,12 +317,18 @@ function toast(m){
   var el=G('toast'); el.textContent=m; el.classList.add('on');
   clearTimeout(toastTid); toastTid=setTimeout(function(){el.classList.remove('on');},2600);
 }
-function status(m,ok){
+function setStatus(m,ok){
   G('stext').textContent=m;
   G('sdot').classList.toggle('ok',!!ok);
 }
 function esc(s){
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+/* FIX: Strip possessive 's and trailing punctuation before dictionary lookup */
+function normalizeWord(w){
+  return w.toLowerCase().replace(/'s$/i,'').replace(/[^a-z]/g,'');
 }
 
 /* ── Theme ── */
@@ -325,154 +344,223 @@ document.querySelectorAll('.th-dot').forEach(function(d){
   var t = localStorage.getItem('eng_theme')||'';
   document.body.dataset.theme = t;
   var d = document.querySelector('.th-dot[data-theme="'+t+'"]');
-  if(d){ document.querySelectorAll('.th-dot').forEach(function(x){x.classList.remove('on');}); d.classList.add('on'); }
+  if(d){
+    document.querySelectorAll('.th-dot').forEach(function(x){x.classList.remove('on');});
+    d.classList.add('on');
+  }
 })();
 
 /* ── Upload ── */
-var upBox = G('upBox'), pdfInput = G('pdfInput');
+var upBox    = G('upBox');
+var pdfInput = G('pdfInput');
+
 upBox.addEventListener('click', function(){ pdfInput.click(); });
+
+/* FIX: Re-upload button lets user open another PDF after first is loaded */
+G('btnReup').addEventListener('click', function(){ pdfInput.click(); });
+
 pdfInput.addEventListener('change', function(){
   if(pdfInput.files[0]) loadPDF(pdfInput.files[0]);
   pdfInput.value='';
 });
-upBox.addEventListener('dragover',function(e){e.preventDefault();upBox.classList.add('drag');});
-upBox.addEventListener('dragleave',function(){upBox.classList.remove('drag');});
-upBox.addEventListener('drop',function(e){
-  e.preventDefault(); upBox.classList.remove('drag');
-  var f=e.dataTransfer.files[0];
-  if(f&&f.type==='application/pdf') loadPDF(f);
+
+upBox.addEventListener('dragover', function(e){ e.preventDefault(); upBox.classList.add('drag'); });
+upBox.addEventListener('dragleave', function(){ upBox.classList.remove('drag'); });
+upBox.addEventListener('drop', function(e){
+  e.preventDefault();
+  e.stopPropagation(); /* FIX: prevent document-level drop from also firing loadPDF */
+  upBox.classList.remove('drag');
+  var f = e.dataTransfer.files[0];
+  if(f && f.type==='application/pdf') loadPDF(f);
   else toast('⚠ PDFファイルを選択してください');
 });
-document.addEventListener('dragover',function(e){e.preventDefault();});
-document.addEventListener('drop',function(e){
+
+/* Document-level drop (for dropping outside the upload box) */
+document.addEventListener('dragover', function(e){ e.preventDefault(); });
+document.addEventListener('drop', function(e){
   e.preventDefault();
-  var f=e.dataTransfer.files[0];
-  if(f&&f.type==='application/pdf') loadPDF(f);
+  var f = e.dataTransfer.files[0];
+  if(f && f.type==='application/pdf') loadPDF(f);
 });
 
 /* ── Load PDF ── */
 async function loadPDF(file){
   if(typeof pdfjsLib==='undefined'){ toast('⚠ PDF.js読み込みエラー'); return; }
+  if(isLoading) return; /* FIX: prevent concurrent loads */
+  isLoading = true;
+
+  /* Reset UI to loading state */
+  closePopup();
   G('emptyEl').classList.add('gone');
   G('pdfView').classList.add('gone');
   G('txtView').classList.remove('on');
   G('loading').classList.add('on');
   G('loadMsg').textContent = 'PDF読み込み中...';
-  status('読み込み中...',false);
+  setStatus('読み込み中...', false);
+
+  /* FIX: Cancel any in-progress canvas render */
+  if(canvasRenderTask){
+    try{ canvasRenderTask.cancel(); }catch(e){}
+    canvasRenderTask = null;
+  }
 
   try{
     var ab = await file.arrayBuffer();
-    pdfDoc = await pdfjsLib.getDocument({
+    var doc = await pdfjsLib.getDocument({
       data: ab,
-      cMapUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@'+VER+'/cmaps/',
-      cMapPacked:true,
-      standardFontDataUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@'+VER+'/standard_fonts/'
+      cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@'+VER+'/cmaps/',
+      cMapPacked: true,
+      standardFontDataUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@'+VER+'/standard_fonts/'
     }).promise;
 
-    totalPg = pdfDoc.numPages;
-    curPage = 1;
-    allText = {};
+    /* FIX: reject empty/corrupt PDFs before doing any work */
+    if(!doc.numPages || doc.numPages < 1) throw new Error('このPDFにはページがありません');
 
-    G('fName').textContent = file.name;
-    G('fPages').textContent = totalPg+'p';
+    pdfDoc   = doc;
+    totalPg  = doc.numPages;
+    curPage  = 1;
+    allText  = {};
+
+    /* FIX: Compute auto-fit scale using WINDOW dimensions (pdfView is hidden at this point,
+       so clientWidth would return 0 — never use hidden element dimensions for layout math) */
+    var firstPage = await doc.getPage(1);
+    var vp0       = firstPage.getViewport({scale:1.0});
+    var sidebarW  = (window.innerWidth > 480) ? 274 : 0;
+    var availW    = window.innerWidth - sidebarW - 48; /* 24px padding each side */
+    scale = Math.max(Math.min(availW / vp0.width, 1.8), 0.3);
+
+    /* Update sidebar info */
+    G('fName').textContent  = file.name;
+    G('fPages').textContent = totalPg + 'p';
     G('fInfo').classList.add('on');
     upBox.style.display = 'none';
-    G('pgDisp').textContent = '1 / '+totalPg;
+    G('pgDisp').textContent = '1 / ' + totalPg;
     G('btnPrev').disabled = true;
-    G('btnNext').disabled = totalPg<=1;
+    G('btnNext').disabled = (totalPg <= 1);
 
+    /* Extract all text for text-mode */
     G('loadMsg').textContent = 'テキスト抽出中...';
     await extractText();
 
     G('loading').classList.remove('on');
+
+    /* FIX: Show PDF view BEFORE rendering so canvas is in the DOM and visible */
+    showPDFMode();
     await renderPage(curPage);
     renderTextView();
 
-    if(viewMode==='pdf') showPDFMode();
-    else showTextMode();
+    setStatus(totalPg + 'ページ読み込み完了 ✓ 単語をクリックして意味を確認', true);
+    toast('✅ ' + file.name + ' を読み込みました');
 
-    status(totalPg+'ページ読み込み完了 ✓ 単語をクリックして意味を確認',true);
-    toast('✅ '+file.name+' を読み込みました');
-  }catch(e){
+  }catch(err){
+    pdfDoc = null;
     G('loading').classList.remove('on');
     G('emptyEl').classList.remove('gone');
-    status('読み込み失敗',false);
-    toast('⚠ 読み込み失敗: '+e.message);
-    console.error(e);
+
+    /* FIX: Restore upload UI so user can try again */
+    upBox.style.display   = '';
+    G('fInfo').classList.remove('on');
+
+    setStatus('読み込み失敗', false);
+    toast('⚠ 読み込み失敗: ' + (err.message||err));
+    console.error('[loadPDF]', err);
+
+  }finally{
+    isLoading = false;
   }
 }
 
-/* ── Extract text from all pages ── */
+/* ── Extract text from every page (for text-mode) ── */
 async function extractText(){
-  for(var p=1;p<=totalPg;p++){
+  for(var p = 1; p <= totalPg; p++){
     try{
       var page = await pdfDoc.getPage(p);
-      var tc = await page.getTextContent({includeMarkedContent:false});
+      var tc   = await page.getTextContent({includeMarkedContent:false});
       allText[p] = tc.items
-        .filter(function(it){return typeof it.str==='string';})
-        .map(function(it){return it.str+(it.hasEOL?'\n':'');})
+        .filter(function(it){ return typeof it.str === 'string'; })
+        .map(function(it){ return it.str + (it.hasEOL ? '\n' : ''); })
         .join('');
-    }catch(e){}
+    }catch(e){ allText[p] = ''; }
   }
 }
 
-/* ── Render PDF page to canvas + text layer ── */
+/* ── Render PDF canvas + text layer ── */
 async function renderPage(pageNum){
   if(!pdfDoc) return;
-  var page = await pdfDoc.getPage(pageNum);
 
-  /* Auto-fit on first load */
-  if(scale===1.0 && pageNum===1){
-    var vp0 = page.getViewport({scale:1.0});
-    var vw = G('pdfView').clientWidth - 48;
-    var scaleW = vw / vp0.width;
-    scale = Math.min(scaleW, 1.8);
+  /* FIX: Cancel previous canvas render to prevent out-of-order frames */
+  if(canvasRenderTask){
+    try{ canvasRenderTask.cancel(); }catch(e){}
+    canvasRenderTask = null;
   }
 
-  var vp = page.getViewport({scale:scale});
+  /* FIX: Update nav controls BEFORE the async render so they are never stale
+     if the render is cancelled mid-flight (e.g. rapid page flipping) */
+  G('pgDisp').textContent = pageNum + ' / ' + totalPg;
+  G('zmVal').textContent  = Math.round(scale * 100) + '%';
+  G('btnPrev').disabled   = (pageNum <= 1);
+  G('btnNext').disabled   = (pageNum >= totalPg);
+
+  var page   = await pdfDoc.getPage(pageNum);
+  var vp     = page.getViewport({scale: scale});
   var canvas = G('pdfCanvas');
-  var ctx = canvas.getContext('2d');
-  canvas.width = vp.width;
+  var ctx    = canvas.getContext('2d');
+
+  canvas.width  = vp.width;
   canvas.height = vp.height;
 
-  await page.render({canvasContext:ctx, viewport:vp}).promise;
+  canvasRenderTask = page.render({canvasContext: ctx, viewport: vp});
+  try{
+    await canvasRenderTask.promise;
+  }catch(e){
+    /* RenderingCancelledException is expected when we cancel — ignore it */
+    if(e && e.name !== 'RenderingCancelledException') console.warn('[render]', e);
+    return;
+  }
+  canvasRenderTask = null;
 
-  /* Text layer */
+  /* Render text layer for word selection */
   var tl = G('txtLayer');
   tl.innerHTML = '';
-  tl.style.width = vp.width+'px';
-  tl.style.height = vp.height+'px';
+  tl.style.width  = vp.width  + 'px';
+  tl.style.height = vp.height + 'px';
   try{
-    var tc = await page.getTextContent({includeMarkedContent:false});
+    var tc   = await page.getTextContent({includeMarkedContent:false});
     var task = pdfjsLib.renderTextLayer({
       textContentSource: tc,
       container: tl,
       viewport: vp,
       textDivs: []
     });
+    /* FIX: handle both {promise} object (PDF.js 3.x) and bare Promise */
     if(task && task.promise) await task.promise;
-  }catch(e){ console.warn('textLayer:', e); }
+    else if(task && typeof task.then === 'function') await task;
+  }catch(e){
+    if(e && e.name !== 'RenderingCancelledException') console.warn('[textLayer]', e);
+  }
 
-  G('pgDisp').textContent = pageNum+' / '+totalPg;
-  G('zmVal').textContent = Math.round(scale*100)+'%';
-  G('btnPrev').disabled = pageNum<=1;
-  G('btnNext').disabled = pageNum>=totalPg;
+  /* zmVal is updated at top of renderPage; pgDisp/buttons also updated there.
+     Re-sync zmVal here in case scale changed between start and end of render. */
+  G('zmVal').textContent = Math.round(scale * 100) + '%';
 }
 
-/* ── Text View ── */
+/* ── Build text-mode view with clickable word tokens ── */
 function renderTextView(){
   var view = G('txtView');
   view.innerHTML = '';
-  for(var p=1;p<=totalPg;p++){
+  for(var p = 1; p <= totalPg; p++){
     var lbl = document.createElement('div');
-    lbl.className = 'pg-lbl';
-    lbl.textContent = 'PAGE '+p;
+    lbl.className   = 'pg-lbl';
+    lbl.textContent = 'PAGE ' + p;
     view.appendChild(lbl);
 
-    var text = allText[p]||'';
+    var text = allText[p] || '';
     if(!text.trim()){
-      var nd = document.createElement('div'); nd.className='no-txt';
-      nd.textContent='(テキストなし)'; view.appendChild(nd); continue;
+      var nd = document.createElement('div');
+      nd.className   = 'no-txt';
+      nd.textContent = '(テキストなし)';
+      view.appendChild(nd);
+      continue;
     }
     var body = document.createElement('div');
     body.className = 'txt-body';
@@ -481,82 +569,99 @@ function renderTextView(){
   }
 }
 
+/* FIX: makeTokens — normalise words (strip possessive 's) for correct dict lookup */
 function makeTokens(text){
   var frag = document.createDocumentFragment();
-  /* Split preserving whitespace and punctuation */
-  var re = /([a-zA-Z]{2,}(?:'[a-zA-Z]+)?)/g;
+  var re   = /([a-zA-Z]{2,}(?:[''][a-zA-Z]+)?)/g;
   var last = 0, m;
-  while((m=re.exec(text))!==null){
-    if(m.index > last) frag.appendChild(document.createTextNode(text.slice(last,m.index)));
-    var word = m[1];
-    var wl = word.toLowerCase();
-    var span = document.createElement('span');
-    span.className = 'tok';
-    if(vocab.some(function(v){return v.word===wl;})) span.classList.add('saved');
-    span.textContent = word;
-    span.dataset.word = wl;
-    (function(w,el){
-      el.addEventListener('click',function(e){
-        e.stopPropagation();
-        openPopup(w, e);
-      });
-    })(wl, span);
-    frag.appendChild(span);
-    last = m.index + word.length;
+  while((m = re.exec(text)) !== null){
+    if(m.index > last)
+      frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+
+    var raw = m[1];
+    var wl  = normalizeWord(raw); /* strip 's, lowercase */
+    if(wl.length >= 2){
+      var span = document.createElement('span');
+      span.className  = 'tok';
+      span.textContent = raw;
+      span.dataset.word = wl;
+      if(vocab.some(function(v){ return v.word === wl; })) span.classList.add('saved');
+      (function(w, el){
+        el.addEventListener('click', function(e){
+          e.stopPropagation();
+          openPopup(w, e);
+        });
+      })(wl, span);
+      frag.appendChild(span);
+    } else {
+      frag.appendChild(document.createTextNode(raw));
+    }
+    last = m.index + raw.length;
   }
   if(last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
   return frag;
 }
 
-/* ── Word selection in PDF mode ── */
+/* ── Word selection in PDF mode via browser text selection ── */
 document.addEventListener('mouseup', function(e){
-  if(!pdfDoc || viewMode!=='pdf') return;
+  if(!pdfDoc || viewMode !== 'pdf') return;
   if(G('popup').contains(e.target)) return;
   setTimeout(function(){
     var sel = window.getSelection();
-    if(!sel || sel.rangeCount===0) return;
+    if(!sel || sel.rangeCount === 0) return;
     var raw = sel.toString().trim();
-    var m = raw.match(/[a-zA-Z]{2,}/);
+    var m   = raw.match(/[a-zA-Z]{2,}/);
     if(!m) return;
-    var word = m[0].toLowerCase();
+    var word = normalizeWord(m[0]); /* FIX: strip possessive 's */
+    if(word.length < 2) return;
     openPopup(word, e);
   }, 20);
 });
 
 document.addEventListener('touchend', function(e){
-  if(!pdfDoc || viewMode!=='pdf') return;
+  if(!pdfDoc || viewMode !== 'pdf') return;
   if(G('popup').contains(e.target)) return;
   var touch = e.changedTouches[0];
   setTimeout(function(){
     var sel = window.getSelection();
     if(!sel) return;
     var raw = sel.toString().trim();
-    var m = raw.match(/[a-zA-Z]{2,}/);
+    var m   = raw.match(/[a-zA-Z]{2,}/);
     if(!m) return;
-    openPopup(m[0].toLowerCase(), {clientX:touch.clientX, clientY:touch.clientY});
+    var word = normalizeWord(m[0]);
+    if(word.length < 2) return;
+    openPopup(word, {clientX: touch.clientX, clientY: touch.clientY});
   }, 80);
 });
 
 /* ── Popup ── */
+function closePopup(){ G('popup').classList.remove('on'); }
+
 async function openPopup(word, evt){
-  if(!word || word.length<2) return;
+  if(!word || word.length < 2) return;
   popupOpenTs = Date.now();
 
-  var popup = G('popup');
+  /* Show loading state immediately */
   G('popBody').innerHTML =
     '<div class="pop-word">'+esc(word)+'</div>'+
-    '<div class="pop-loading"><div class="spin" style="width:14px;height:14px;border-width:1.5px"></div>調べています...</div>';
-  popup.classList.add('on');
-  posPopup(evt);
+    '<div class="pop-loading">'+
+      '<div class="spin" style="width:14px;height:14px;border-width:1.5px"></div>'+
+      '調べています...'+
+    '</div>';
+  G('popup').classList.add('on');
+  posPopup(evt, true); /* quick initial position */
 
   try{
     var data = await fetchDef(word);
-    renderPopup(word, data, evt);
-  }catch(e){
+    buildPopup(word, data, evt);
+  }catch(err){
     G('popBody').innerHTML =
       '<div class="pop-word">'+esc(word)+'</div>'+
-      '<div class="pop-404">❌ 意味が見つかりませんでした<br><span style="font-size:10px">英単語以外または辞書にない語</span></div>';
-    posPopup(evt);
+      '<div class="pop-404">❌ 意味が見つかりませんでした'+
+        '<br><span style="font-size:10px">英単語以外または辞書にない語</span>'+
+      '</div>';
+    /* FIX: reposition after content change */
+    setTimeout(function(){ posPopup(evt, false); }, 0);
   }
 }
 
@@ -564,172 +669,202 @@ async function fetchDef(word){
   var res = await fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+encodeURIComponent(word));
   if(!res.ok) throw new Error('not found');
   var json = await res.json();
-  if(!Array.isArray(json)||!json.length) throw new Error('empty');
+  if(!Array.isArray(json) || !json.length) throw new Error('empty');
   return json[0];
 }
 
-function renderPopup(word, data, evt){
-  var isSaved = vocab.some(function(v){return v.word===word;});
+function buildPopup(word, data, evt){
+  var isSaved = vocab.some(function(v){ return v.word === word; });
   var html = '';
-  html += '<div class="pop-word">'+esc(data.word||word)+'</div>';
-  var phon = data.phonetic || (data.phonetics||[]).filter(function(p){return p.text;}).map(function(p){return p.text;})[0]||'';
+
+  html += '<div class="pop-word">'+esc(data.word || word)+'</div>';
+
+  var phon = data.phonetic ||
+    (data.phonetics||[]).filter(function(p){ return p.text; }).map(function(p){ return p.text; })[0] || '';
   if(phon) html += '<div class="pop-phon">'+esc(phon)+'</div>';
 
-  (data.meanings||[]).slice(0,3).forEach(function(m,i){
-    if(i>0) html += '<div class="pop-div"></div>';
+  (data.meanings||[]).slice(0,3).forEach(function(m, i){
+    if(i > 0) html += '<div class="pop-div"></div>';
     html += '<div class="pop-pos">'+esc(m.partOfSpeech||'')+'</div>';
-    (m.definitions||[]).slice(0,2).forEach(function(d,di){
+    (m.definitions||[]).slice(0,2).forEach(function(d, di){
       html += '<div class="pop-def">'+(di+1)+'. '+esc(d.definition||'')+'</div>';
       if(d.example) html += '<div class="pop-ex">"'+esc(d.example)+'"</div>';
     });
-    if((m.synonyms||[]).length>0){
-      html += '<div class="pop-syn">類義語: <strong>'+m.synonyms.slice(0,4).map(esc).join(', ')+'</strong></div>';
+    if((m.synonyms||[]).length > 0){
+      html += '<div class="pop-syn">類義語: <strong>'+
+        m.synonyms.slice(0,4).map(esc).join(', ')+'</strong></div>';
     }
   });
 
   html += '<div class="pop-actions">';
   if(isSaved){
     html += '<button class="pop-btn done">✓ 保存済み</button>';
-  }else{
+  } else {
     html += '<button class="pop-btn pri" id="popSave">＋ 単語帳に保存</button>';
   }
   html += '</div>';
 
   G('popBody').innerHTML = html;
-  posPopup(evt);
+
+  /* FIX: use setTimeout so browser has laid out the new content before measuring offsetHeight */
+  setTimeout(function(){ posPopup(evt, false); }, 0);
 
   var saveBtn = G('popSave');
   if(saveBtn){
-    saveBtn.addEventListener('click',function(){
+    saveBtn.addEventListener('click', function(){
       saveVocab(word, data);
-      saveBtn.className='pop-btn done';
-      saveBtn.textContent='✓ 保存済み';
+      saveBtn.className   = 'pop-btn done';
+      saveBtn.textContent = '✓ 保存済み';
     });
   }
 }
 
-function posPopup(evt){
+/* FIX: posPopup uses offsetHeight (actual rendered height) not scrollHeight
+   (which ignores max-height and returns the full unconstrained content height) */
+function posPopup(evt, quick){
   var popup = G('popup');
-  var pw = 320, ph = popup.scrollHeight||220;
-  var x = evt.clientX, y = evt.clientY;
-  if(x+pw+14 > window.innerWidth) x = window.innerWidth-pw-14;
-  if(x < 8) x=8;
-  y = (y+ph+20 > window.innerHeight) ? y-ph-8 : y+16;
-  if(y<8) y=8;
-  popup.style.left = x+'px';
-  popup.style.top  = y+'px';
+  var pw = popup.offsetWidth  || 320;
+  var ph = quick ? 120 : (popup.offsetHeight || 220);
+  var x  = evt.clientX;
+  var y  = evt.clientY;
+  if(x + pw + 14 > window.innerWidth)  x = window.innerWidth - pw - 14;
+  if(x < 8) x = 8;
+  y = (y + ph + 20 > window.innerHeight) ? y - ph - 8 : y + 16;
+  if(y < 8) y = 8;
+  popup.style.left = x + 'px';
+  popup.style.top  = y + 'px';
 }
 
-G('popClose').addEventListener('click',function(){ G('popup').classList.remove('on'); });
-document.addEventListener('click',function(e){
-  if(Date.now()-popupOpenTs < 200) return;
-  var popup = G('popup');
-  if(popup.classList.contains('on') && !popup.contains(e.target)){
-    popup.classList.remove('on');
-  }
-});
-document.addEventListener('keydown',function(e){ if(e.key==='Escape') G('popup').classList.remove('on'); });
+G('popClose').addEventListener('click', closePopup);
 
-/* ── Save / Vocab ── */
+/* Close when clicking outside — guarded by timestamp to prevent immediate close */
+document.addEventListener('click', function(e){
+  if(Date.now() - popupOpenTs < 200) return;
+  var popup = G('popup');
+  if(popup.classList.contains('on') && !popup.contains(e.target)) closePopup();
+});
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closePopup(); });
+
+/* ── Save word to vocabulary ── */
 function saveVocab(word, data){
-  if(vocab.some(function(v){return v.word===word;})) return;
-  var m = (data.meanings||[])[0]||{};
-  var d = (m.definitions||[])[0]||{};
-  var phon = data.phonetic || (data.phonetics||[]).filter(function(p){return p.text;}).map(function(p){return p.text;})[0]||'';
-  vocab.unshift({
-    word:word, phonetic:phon,
-    pos:m.partOfSpeech||'', definition:d.definition||''
+  if(vocab.some(function(v){ return v.word === word; })) return;
+  var m    = (data.meanings||[])[0] || {};
+  var d    = (m.definitions||[])[0] || {};
+  var phon = data.phonetic ||
+    (data.phonetics||[]).filter(function(p){ return p.text; }).map(function(p){ return p.text; })[0] || '';
+  vocab.unshift({ word:word, phonetic:phon, pos:m.partOfSpeech||'', definition:d.definition||'' });
+  /* FIX: catch QuotaExceededError — localStorage can be full on some browsers */
+  try{ localStorage.setItem('eng_vocab', JSON.stringify(vocab)); }
+  catch(e){ toast('⚠ 単語帳の保存に失敗しました（ストレージ容量不足）'); vocab.shift(); return; }
+  /* Mark all matching tokens in text view */
+  document.querySelectorAll('.tok').forEach(function(el){
+    if(el.dataset.word === word) el.classList.add('saved');
   });
-  localStorage.setItem('eng_vocab',JSON.stringify(vocab));
-  /* mark in text view */
-  document.querySelectorAll('.tok[data-word="'+word+'"]').forEach(function(el){
-    el.classList.add('saved');
-  });
-  renderVocab(); updateVBadge();
+  renderVocab();
+  updateVBadge();
   toast('💾 "'+word+'" を単語帳に保存しました');
 }
 
+/* ── Vocab list ── */
 function renderVocab(){
-  var list = G('vList'), empty = G('vEmpty');
+  var list  = G('vList');
+  var empty = G('vEmpty');
   if(!vocab.length){ empty.style.display=''; list.innerHTML=''; return; }
-  empty.style.display='none'; list.innerHTML='';
+  empty.style.display = 'none';
+  list.innerHTML = '';
   vocab.forEach(function(v){
-    var div=document.createElement('div'); div.className='v-item';
-    div.innerHTML=
+    var div = document.createElement('div');
+    div.className = 'v-item';
+    div.innerHTML =
       '<div class="v-word">'+esc(v.word)+'</div>'+
-      (v.phonetic?'<div class="v-phon">'+esc(v.phonetic)+'</div>':'')+
-      (v.pos?'<span class="v-pos">'+esc(v.pos)+'</span>':'')+
-      (v.definition?'<div class="v-def">'+esc(v.definition)+'</div>':'');
+      (v.phonetic  ? '<div class="v-phon">'+esc(v.phonetic)+'</div>'  : '')+
+      (v.pos       ? '<span class="v-pos">'+esc(v.pos)+'</span>'      : '')+
+      (v.definition? '<div class="v-def">'+esc(v.definition)+'</div>' : '');
     (function(vv){
-      div.addEventListener('click',function(){
-        openPopup(vv.word, {clientX:window.innerWidth/2, clientY:window.innerHeight/2});
+      div.addEventListener('click', function(){
+        openPopup(vv.word, {clientX: window.innerWidth/2, clientY: window.innerHeight/2});
       });
     })(v);
     list.appendChild(div);
   });
 }
-function updateVBadge(){ G('vbadge').textContent='単語帳 '+vocab.length; }
-G('vbadge').addEventListener('click',function(){ G('vList').scrollIntoView({behavior:'smooth'}); });
+function updateVBadge(){ G('vbadge').textContent = '単語帳 ' + vocab.length; }
 
-G('vClear').addEventListener('click',function(){
+G('vbadge').addEventListener('click', function(){ G('vList').scrollIntoView({behavior:'smooth'}); });
+G('vClear').addEventListener('click', function(){
   if(!vocab.length) return;
   if(!confirm('単語帳をクリアしますか?')) return;
-  vocab=[]; localStorage.setItem('eng_vocab','[]');
-  document.querySelectorAll('.tok.saved').forEach(function(el){el.classList.remove('saved');});
-  renderVocab(); updateVBadge();
+  vocab = [];
+  try{ localStorage.setItem('eng_vocab', '[]'); }catch(e){}
+  document.querySelectorAll('.tok.saved').forEach(function(el){ el.classList.remove('saved'); });
+  renderVocab();
+  updateVBadge();
   toast('単語帳をクリアしました');
 });
 
-/* ── Page Nav ── */
-G('btnPrev').addEventListener('click',function(){
-  if(curPage>1){ curPage--; renderPage(curPage); G('popup').classList.remove('on'); }
+/* ── Page Navigation ── */
+G('btnPrev').addEventListener('click', function(){
+  if(!pdfDoc || curPage <= 1) return;
+  curPage--;
+  renderPage(curPage);
+  closePopup();
 });
-G('btnNext').addEventListener('click',function(){
-  if(curPage<totalPg){ curPage++; renderPage(curPage); G('popup').classList.remove('on'); }
+G('btnNext').addEventListener('click', function(){
+  if(!pdfDoc || curPage >= totalPg) return;
+  curPage++;
+  renderPage(curPage);
+  closePopup();
 });
-document.addEventListener('keydown',function(e){
-  if(!pdfDoc||viewMode!=='pdf') return;
-  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
-  if(e.key==='ArrowRight'||e.key==='ArrowDown'){
-    if(curPage<totalPg){curPage++;renderPage(curPage);}
-  }else if(e.key==='ArrowLeft'||e.key==='ArrowUp'){
-    if(curPage>1){curPage--;renderPage(curPage);}
+document.addEventListener('keydown', function(e){
+  if(!pdfDoc || viewMode !== 'pdf') return;
+  if(e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if(e.key === 'ArrowRight' || e.key === 'ArrowDown'){
+    if(curPage < totalPg){ curPage++; renderPage(curPage); }
+  } else if(e.key === 'ArrowLeft' || e.key === 'ArrowUp'){
+    if(curPage > 1){ curPage--; renderPage(curPage); }
   }
 });
 
 /* ── Zoom ── */
-G('btnZin').addEventListener('click',function(){
-  scale=Math.min(scale*1.2,3.0); renderPage(curPage);
+G('btnZin').addEventListener('click', function(){
+  if(!pdfDoc) return; /* FIX: guard against no PDF */
+  scale = Math.min(scale * 1.2, 3.0);
+  renderPage(curPage);
 });
-G('btnZout').addEventListener('click',function(){
-  scale=Math.max(scale/1.2,0.3); renderPage(curPage);
-});
-G('btnZfit').addEventListener('click',function(){
+G('btnZout').addEventListener('click', function(){
   if(!pdfDoc) return;
-  scale=1.0; /* reset then auto-fit will recalc — force recalc */
+  scale = Math.max(scale / 1.2, 0.3);
+  renderPage(curPage);
+});
+G('btnZfit').addEventListener('click', function(){
+  if(!pdfDoc) return;
+  /* FIX: Use window dimensions (not pdfView.clientWidth) for accurate fit calculation */
   pdfDoc.getPage(curPage).then(function(page){
-    var vp0=page.getViewport({scale:1.0});
-    var vw=G('pdfView').clientWidth-48;
-    scale=Math.min(vw/vp0.width,1.8);
+    var vp0      = page.getViewport({scale:1.0});
+    var sidebarW = (window.innerWidth > 480) ? 274 : 0;
+    var availW   = window.innerWidth - sidebarW - 48;
+    scale = Math.max(Math.min(availW / vp0.width, 1.8), 0.3);
     renderPage(curPage);
   });
 });
 
 /* ── Mode Switch ── */
 function showPDFMode(){
-  viewMode='pdf';
-  G('btnPDF').classList.add('on'); G('btnTxt').classList.remove('on');
+  viewMode = 'pdf';
+  G('btnPDF').classList.add('on');    G('btnTxt').classList.remove('on');
   G('pdfView').classList.remove('gone');
   G('txtView').classList.remove('on');
+  closePopup(); /* FIX: close popup when switching modes */
 }
 function showTextMode(){
-  viewMode='text';
-  G('btnTxt').classList.add('on'); G('btnPDF').classList.remove('on');
+  viewMode = 'text';
+  G('btnTxt').classList.add('on');    G('btnPDF').classList.remove('on');
   G('pdfView').classList.add('gone');
   G('txtView').classList.add('on');
+  closePopup(); /* FIX: close popup when switching modes */
 }
-G('btnPDF').addEventListener('click',function(){ if(pdfDoc) showPDFMode(); });
-G('btnTxt').addEventListener('click',function(){ if(pdfDoc) showTextMode(); });
+G('btnPDF').addEventListener('click', function(){ if(pdfDoc) showPDFMode(); });
+G('btnTxt').addEventListener('click', function(){ if(pdfDoc) showTextMode(); });
 
 /* ── Init ── */
 renderVocab();
