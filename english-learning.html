@@ -312,6 +312,7 @@ var popupOpenTs = 0;
 var isLoading   = false;
 var pdfProblems = [];
 var geminiKey   = (function(){ try{ return localStorage.getItem('gemini_key')||''; }catch(e){ return ''; } })();
+var vocabSaveGen = 0;
 
 /* ── Utils ── */
 function G(id){ return document.getElementById(id); }
@@ -506,6 +507,7 @@ function parsePDFProblems(){
 
 /* ── Auto-save vocab from PDF choices ── */
 async function autoSaveVocabFromProblems(problems){
+  var gen=++vocabSaveGen;
   var seen={}, words=[];
   problems.forEach(function(p){
     p.choices.forEach(function(c){
@@ -518,8 +520,10 @@ async function autoSaveVocabFromProblems(problems){
   if(!words.length) return 0;
   var added=0;
   for(var i=0;i<words.length;i++){
+    if(gen!==vocabSaveGen) return added; /* newer PDF loaded — abort */
     try{
       var data=await fetchDef(words[i]);
+      if(gen!==vocabSaveGen) return added;
       if(!vocab.some(function(v){ return v.word===words[i]; })){
         var m=(data.meanings||[])[0]||{};
         var d=(m.definitions||[])[0]||{};
