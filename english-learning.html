@@ -177,6 +177,29 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',-apple-system,
 .quiz-score-sub{font-size:11.5px;color:var(--muted);text-align:center}
 /* empty */
 .quiz-empty{text-align:center;color:var(--muted);font-size:13px;line-height:2.2;padding:40px 20px}
+/* PDF sentence question */
+.quiz-q-sentence{font-size:15px;font-weight:400;line-height:2.1;color:var(--txt);text-align:left;word-break:break-word}
+.quiz-blank{display:inline-block;min-width:52px;border-bottom:2.5px solid var(--acc);margin:0 3px;vertical-align:baseline}
+/* settings modal */
+.hdr-icon-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px 7px;border-radius:5px;transition:color .12s;flex-shrink:0}
+.hdr-icon-btn:hover{color:var(--acc)}
+.settings-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:3000;display:none;align-items:center;justify-content:center;padding:16px}
+.settings-overlay.on{display:flex}
+.settings-box{background:var(--surf);border:1px solid var(--bdr);border-radius:14px;padding:22px 24px;width:340px;max-width:100%}
+.settings-title{font-size:15px;font-weight:700;color:var(--txt);margin-bottom:18px}
+.settings-lbl{font-size:10px;color:var(--muted);letter-spacing:.15em;text-transform:uppercase;margin-bottom:6px}
+.settings-input{width:100%;background:var(--surf2);border:1px solid var(--bdr);color:var(--txt);border-radius:7px;padding:9px 12px;font-size:12px;font-family:monospace;outline:none;transition:border-color .15s}
+.settings-input:focus{border-color:var(--acc)}
+.settings-note{font-size:10px;color:var(--muted);margin-top:5px;line-height:1.7}
+.settings-note a{color:var(--acc)}
+.settings-actions{display:flex;gap:8px;margin-top:16px}
+.settings-save{flex:1;background:var(--acc);border:none;color:#fff;border-radius:7px;padding:9px;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s}
+.settings-save:hover{opacity:.88}
+.settings-cancel{background:var(--surf2);border:1px solid var(--bdr);color:var(--dim);border-radius:7px;padding:9px 14px;font-size:13px;cursor:pointer;transition:all .15s}
+.settings-cancel:hover{border-color:var(--acc);color:var(--acc)}
+.settings-status{font-size:11px;margin-top:10px;padding:7px 10px;border-radius:6px;display:none}
+.settings-status.ok{display:block;background:rgba(74,255,160,.1);color:var(--grn);border:1px solid var(--grn)}
+.settings-status.ng{display:block;background:rgba(255,74,106,.08);color:var(--red);border:1px solid var(--red)}
 
 /* status bar */
 .sbar{height:30px;background:var(--surf);border-top:1px solid var(--bdr);display:flex;align-items:center;padding:0 14px;gap:8px;font-size:10.5px;color:var(--muted);flex-shrink:0}
@@ -244,9 +267,29 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',-apple-system,
       <div class="th-dot" data-theme="purple" style="background:#0c0610" title="Purple"></div>
       <div class="th-dot" data-theme="slate" style="background:#161618" title="Slate"></div>
     </div>
+    <button class="hdr-icon-btn" id="btnSettings" title="設定">⚙</button>
     <div class="vbadge" id="vbadge">単語帳 0</div>
   </div>
 </header>
+
+<!-- SETTINGS MODAL -->
+<div class="settings-overlay" id="settingsOverlay">
+  <div class="settings-box">
+    <div class="settings-title">⚙ 設定</div>
+    <div class="settings-lbl">Gemini API Key</div>
+    <input type="password" class="settings-input" id="geminiKeyInput" placeholder="AIzaSy...">
+    <div class="settings-note">
+      Google AI Studio で無料取得 →
+      <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com</a><br>
+      キーはこのデバイスにのみ保存されます。PDFロード時に自動で問題を解析します。
+    </div>
+    <div class="settings-status" id="settingsStatus"></div>
+    <div class="settings-actions">
+      <button class="settings-save" id="settingsSave">保存</button>
+      <button class="settings-cancel" id="settingsCancel">キャンセル</button>
+    </div>
+  </div>
+</div>
 
 <div class="wrap">
   <!-- SIDEBAR -->
@@ -362,6 +405,8 @@ var viewMode   = 'pdf';
 var popupOpenTs = 0;
 var canvasRenderTask = null; /* FIX: track active canvas render for cancellation */
 var isLoading  = false;     /* FIX: prevent double-load */
+var pdfProblems = [];
+var geminiKey   = (function(){ try{ return localStorage.getItem('gemini_key')||''; }catch(e){ return ''; } })();
 
 /* ── Utils ── */
 function G(id){ return document.getElementById(id); }
@@ -494,6 +539,23 @@ async function loadPDF(file){
     /* Extract all text for text-mode */
     G('loadMsg').textContent = 'テキスト抽出中...';
     await extractText();
+
+    /* Parse fill-in-blank problems */
+    pdfProblems = parsePDFProblems();
+    if(pdfProblems.length > 0){
+      if(geminiKey){
+        G('loadMsg').textContent = 'AI解析中 (Gemini)...';
+        try{
+          await solveWithGemini(pdfProblems);
+          toast('🤖 '+pdfProblems.length+'問をAI解析しました');
+        }catch(e){
+          toast('⚠ AI解析失敗: '+e.message);
+          console.warn('[Gemini]', e);
+        }
+      } else {
+        toast('📝 '+pdfProblems.length+'問を検出 — ⚙設定でGemini APIキーを入力すると自動採点できます');
+      }
+    }
 
     G('loading').classList.remove('on');
 
@@ -921,6 +983,81 @@ function showTextMode(){
 G('btnPDF').addEventListener('click', function(){ if(pdfDoc) showPDFMode(); });
 G('btnTxt').addEventListener('click', function(){ if(pdfDoc) showTextMode(); });
 
+/* ── SETTINGS ── */
+G('btnSettings').addEventListener('click', function(){
+  G('geminiKeyInput').value = geminiKey;
+  G('settingsStatus').className = 'settings-status';
+  G('settingsStatus').textContent = '';
+  G('settingsOverlay').classList.add('on');
+});
+G('settingsCancel').addEventListener('click', function(){ G('settingsOverlay').classList.remove('on'); });
+G('settingsOverlay').addEventListener('click', function(e){ if(e.target===G('settingsOverlay')) G('settingsOverlay').classList.remove('on'); });
+G('settingsSave').addEventListener('click', function(){
+  var k = G('geminiKeyInput').value.trim();
+  geminiKey = k;
+  try{ localStorage.setItem('gemini_key', k); }catch(e){}
+  var st = G('settingsStatus');
+  if(k){ st.className='settings-status ok'; st.textContent='✅ 保存しました。次回PDFロード時に自動解析します'; }
+  else  { st.className='settings-status ng'; st.textContent='APIキーを削除しました'; }
+});
+
+/* ── PDF PROBLEM PARSER ── */
+function parsePDFProblems(){
+  var text = Object.keys(allText).sort(function(a,b){ return a-b; })
+    .map(function(k){ return allText[k]; }).join('\n');
+  /* normalize blanks: （ ）→( ) */
+  text = text.replace(/[（(]\s*[）)]/g, '( )').replace(/（[　\s]+）/g, '( )');
+  var lines = text.split(/\n/).map(function(l){ return l.trim(); });
+  var problems = [];
+  for(var i=0; i<lines.length; ){
+    var qm = lines[i].match(/^[（(](\d+)[）)]\s+(.*)/);
+    if(qm && parseInt(qm[1]) === problems.length+1){
+      var qText = qm[2], num = parseInt(qm[1]);
+      i++;
+      for(; i<lines.length; i++){
+        var l = lines[i];
+        /* choice line: "1 word 2 word 3 word 4 word" with any spacing */
+        var cm = l.match(/^1[\s　]+(\S+)[\s　]+2[\s　]+(\S+)[\s　]+3[\s　]+(\S+)[\s　]+4[\s　]+(\S+)/);
+        if(cm){
+          problems.push({num:num, text:qText.replace(/\s+/g,' ').trim(),
+            choices:[cm[1],cm[2],cm[3],cm[4]], correctIdx:-1});
+          i++; break;
+        }
+        if(l.match(/^[（(]\d+[）)]/)) break; /* next Q starts */
+        if(l) qText += ' '+l;
+      }
+    } else { i++; }
+  }
+  return problems;
+}
+
+/* ── GEMINI API ── */
+async function solveWithGemini(problems){
+  var prompt = '以下の英語穴埋め問題を解き、全問の正解番号をカンマ区切りで返してください。番号のみ（例: 2,1,4,3,1,4）\n\n';
+  problems.forEach(function(p,i){
+    prompt += '('+(i+1)+') '+p.text+'\n';
+    p.choices.forEach(function(c,j){ prompt += (j+1)+' '+c+'  '; });
+    prompt += '\n\n';
+  });
+  var res = await fetch(
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key='+encodeURIComponent(geminiKey),
+    {method:'POST', headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})}
+  );
+  if(!res.ok){
+    var e = await res.json().catch(function(){ return {}; });
+    throw new Error((e.error&&e.error.message)||('HTTP '+res.status));
+  }
+  var json = await res.json();
+  var txt = json.candidates[0].content.parts[0].text.trim();
+  var nums = txt.match(/[1-4]/g);
+  if(nums && nums.length === problems.length){
+    nums.forEach(function(n,i){ problems[i].correctIdx = parseInt(n)-1; });
+  } else {
+    throw new Error('応答を解析できませんでした: '+txt.slice(0,40));
+  }
+}
+
 /* ── QUIZ ── */
 var quizQuestions = [];
 var quizAnswers   = [];   /* -1 = unanswered */
@@ -946,6 +1083,17 @@ function buildQuizQuestions(){
   });
 }
 function startQuiz(){
+  /* PDF問題があればそちらを使う */
+  if(pdfProblems.length > 0){
+    quizQuestions = pdfProblems.map(function(p){
+      return {text:p.text, choices:p.choices, correctIdx:p.correctIdx};
+    });
+    quizAnswers = quizQuestions.map(function(){ return -1; });
+    quizIdx=0; quizChecked=false;
+    renderQuizQ();
+    return;
+  }
+  /* 単語帳クイズ */
   var valid=vocab.filter(function(v){ return v.definition; });
   if(valid.length<4){
     G('quizInner').innerHTML=
@@ -1012,12 +1160,24 @@ function renderQuizQ(){
       '<div class="quiz-score-sub">正解率 '+Math.round(score/total*100)+'%</div>';
   }
 
+  /* PDF問題（文章）か単語帳問題かで表示を切り替える */
+  var qMainHtml, qMainCls, qLbl;
+  if(q.text){
+    qMainHtml = esc(q.text).replace(/\( \)/g, '<span class="quiz-blank">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>');
+    qMainCls  = 'quiz-q-sentence';
+    qLbl      = '（　）に入れる最も適切な語を選んでください';
+  } else {
+    qMainHtml = esc(q.word||'');
+    qMainCls  = 'quiz-q-word';
+    qLbl      = 'この単語の意味は？';
+  }
+
   G('quizInner').innerHTML=
     '<div class="qprog-wrap">'+progHtml+'</div>'+
     '<div class="quiz-q-area">'+
       '<div class="quiz-q-num"><span>('+(quizIdx+1)+')</span>'+qResult+'</div>'+
-      '<div class="quiz-q-lbl">この単語の意味は？</div>'+
-      '<div class="quiz-q-word">'+esc(q.word)+'</div>'+
+      '<div class="quiz-q-lbl">'+qLbl+'</div>'+
+      '<div class="'+qMainCls+'">'+qMainHtml+'</div>'+
       (q.phonetic?'<div class="quiz-q-phon">'+esc(q.phonetic)+'</div>':'')+
     '</div>'+
     '<div class="quiz-choices">'+choicesHtml+'</div>'+
@@ -1073,6 +1233,20 @@ function quizSelect(idx){
   }
 }
 function quizDoCheck(){
+  /* PDF問題で正解が不明（APIキー未設定など）の場合 */
+  var hasUnknown = quizQuestions.some(function(q){ return q.correctIdx===-1; });
+  if(hasUnknown){
+    G('quizInner').innerHTML=
+      '<div class="quiz-empty">自動採点にはGemini APIキーが必要です<br><br>'+
+      '<button class="quiz-check-btn" id="openSettingsBtn" style="display:inline-block;width:auto;padding:10px 24px">⚙ 設定を開く</button>'+
+      '<br><br><span style="font-size:11px">設定後、PDFを再読み込みしてください</span></div>';
+    G('openSettingsBtn').addEventListener('click',function(){
+      G('geminiKeyInput').value=geminiKey;
+      G('settingsStatus').className='settings-status';
+      G('settingsOverlay').classList.add('on');
+    });
+    return;
+  }
   quizChecked=true; quizIdx=0;
   renderQuizQ();
 }
