@@ -433,6 +433,15 @@ async function loadPDF(file){
     showQuizMode();
     toast('✅ '+file.name+' を読み込みました（'+totalPg+'ページ）');
 
+    /* auto-save all choice words to vocab in background */
+    if(pdfProblems.length>0){
+      setTimeout(function(){
+        autoSaveVocabFromProblems(pdfProblems).then(function(cnt){
+          if(cnt>0) toast('📚 選択肢の単語 '+cnt+'語を単語帳に追加しました');
+        }).catch(function(){});
+      },800);
+    }
+
   }catch(err){
     pdfDoc = null;
     G('loading').classList.remove('on');
@@ -493,6 +502,39 @@ function parsePDFProblems(){
     } else { i++; }
   }
   return problems;
+}
+
+/* ── Auto-save vocab from PDF choices ── */
+async function autoSaveVocabFromProblems(problems){
+  var seen={}, words=[];
+  problems.forEach(function(p){
+    p.choices.forEach(function(c){
+      var w=c.toLowerCase().replace(/[^a-z']/g,'').replace(/^'+|'+$/g,'');
+      if(w.length>=2 && !seen[w] && !vocab.some(function(v){ return v.word===w; })){
+        seen[w]=true; words.push(w);
+      }
+    });
+  });
+  if(!words.length) return 0;
+  var added=0;
+  for(var i=0;i<words.length;i++){
+    try{
+      var data=await fetchDef(words[i]);
+      if(!vocab.some(function(v){ return v.word===words[i]; })){
+        var m=(data.meanings||[])[0]||{};
+        var d=(m.definitions||[])[0]||{};
+        var phon=data.phonetic||(data.phonetics||[]).filter(function(p){ return p.text; }).map(function(p){ return p.text; })[0]||'';
+        vocab.push({word:words[i],phonetic:phon,pos:m.partOfSpeech||'',definition:d.definition||''});
+        added++;
+      }
+    }catch(e){}
+    if(i<words.length-1) await new Promise(function(r){ setTimeout(r,150); });
+  }
+  if(added>0){
+    try{ localStorage.setItem('eng_vocab',JSON.stringify(vocab)); }catch(e){}
+    updateVBadge();
+  }
+  return added;
 }
 
 /* ── Gemini API ── */
