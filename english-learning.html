@@ -455,24 +455,31 @@ async function loadPDF(file){
   }
 }
 
-/* ── Extract text (hidden canvas) ── */
+/* ── Extract text — position-aware spacing ── */
 async function extractText(){
-  var canvas = G('pdfCanvas');
-  var ctx    = canvas.getContext('2d');
   for(var p=1; p<=totalPg; p++){
     try{
       var page = await pdfDoc.getPage(p);
-      var dpr  = window.devicePixelRatio || 1;
-      var vp   = page.getViewport({scale: dpr});
-      canvas.width  = Math.floor(vp.width);
-      canvas.height = Math.floor(vp.height);
-      var task = page.render({canvasContext:ctx, viewport:vp});
-      try{ if(task.promise) await task.promise; else await task; }catch(e){}
-      var tc = await page.getTextContent({includeMarkedContent:false});
-      allText[p] = tc.items
-        .filter(function(it){ return typeof it.str==='string'; })
-        .map(function(it){ return it.str+(it.hasEOL?'\n':''); })
-        .join('');
+      var tc   = await page.getTextContent({includeMarkedContent:false});
+      var items = tc.items.filter(function(it){ return typeof it.str==='string' && it.str!==''; });
+      if(!items.length){ allText[p]=''; continue; }
+
+      var result='';
+      for(var j=0;j<items.length;j++){
+        var it=items[j], prev=j>0?items[j-1]:null;
+        if(!prev){
+          result+=it.str;
+        } else if(prev.hasEOL){
+          result+='\n'+it.str;
+        } else {
+          /* detect gap between items on same line */
+          var gap=it.transform[4]-(prev.transform[4]+(prev.width||0));
+          var fsize=Math.abs(it.transform[3])||10;
+          result+=(gap>fsize*0.15?' ':'')+it.str;
+        }
+      }
+      allText[p]=result;
+      console.log('[PDF p'+p+']',result.slice(0,400));
     }catch(e){ allText[p]=''; }
   }
 }
@@ -482,23 +489,55 @@ function parsePDFProblems(){
   var text = Object.keys(allText).sort(function(a,b){ return a-b; })
     .map(function(k){ return allText[k]; }).join('\n');
   text = text.replace(/[（(]\s*[）)]/g,'( )').replace(/（[　\s]+）/g,'( )');
-  var lines = text.split(/\n/).map(function(l){ return l.trim(); });
+  /* collapse runs of spaces but keep newlines */
+  text = text.replace(/[ \t]+/g,' ');
+  var lines = text.split(/\n/).map(function(l){ return l.trim(); }).filter(function(l){ return l!==''; });
   var problems = [];
+
   for(var i=0; i<lines.length; ){
     var qm = lines[i].match(/^[（(](\d+)[）)]\s+(.*)/);
     if(qm && parseInt(qm[1])===problems.length+1){
       var qText=qm[2], num=parseInt(qm[1]);
       i++;
-      for(; i<lines.length; i++){
+      while(i<lines.length){
         var l=lines[i];
+
+        /* ── choice patterns ── */
+        /* (a) all 4 on one line: "1 word 2 word 3 word 4 word" */
         var cm=l.match(/^1[\s　]+(\S+)[\s　]+2[\s　]+(\S+)[\s　]+3[\s　]+(\S+)[\s　]+4[\s　]+(\S+)/);
         if(cm){
-          problems.push({num:num, text:qText.replace(/\s+/g,' ').trim(),
-            choices:[cm[1],cm[2],cm[3],cm[4]], correctIdx:-1});
+          problems.push({num:num,text:qText.replace(/\s+/g,' ').trim(),
+            choices:[cm[1],cm[2],cm[3],cm[4]],correctIdx:-1});
           i++; break;
         }
-        if(l.match(/^[（(]\d+[）)]/)) break;
-        if(l) qText+=' '+l;
+
+        /* (b) 2+2 across two lines */
+        var c12=l.match(/^1[\s　]+(\S+)[\s　]+2[\s　]+(\S+)/);
+        if(c12 && i+1<lines.length){
+          var c34=lines[i+1].match(/^3[\s　]+(\S+)[\s　]+4[\s　]+(\S+)/);
+          if(c34){
+            problems.push({num:num,text:qText.replace(/\s+/g,' ').trim(),
+              choices:[c12[1],c12[2],c34[1],c34[2]],correctIdx:-1});
+            i+=2; break;
+          }
+        }
+
+        /* (c) one choice per line */
+        var c1=l.match(/^1[\s　]+(\S+)/);
+        if(c1 && i+3<lines.length){
+          var c2=lines[i+1].match(/^2[\s　]+(\S+)/);
+          var c3=lines[i+2].match(/^3[\s　]+(\S+)/);
+          var c4=lines[i+3].match(/^4[\s　]+(\S+)/);
+          if(c2&&c3&&c4){
+            problems.push({num:num,text:qText.replace(/\s+/g,' ').trim(),
+              choices:[c1[1],c2[1],c3[1],c4[1]],correctIdx:-1});
+            i+=4; break;
+          }
+        }
+
+        if(l.match(/^[（(]\d+[）)]/)) break; /* next question — stop */
+        if(!l.match(/^[1-4][\s　]/)) qText+=' '+l; /* question text continuation */
+        i++;
       }
     } else { i++; }
   }
