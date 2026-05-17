@@ -131,6 +131,32 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',-apple-system,
 .tok.saved{color:var(--acc)}
 .no-txt{font-size:11.5px;color:var(--muted);padding:6px 0}
 
+/* ── QUIZ VIEW ── */
+.quiz-view{flex:1;overflow-y:auto;display:none;flex-direction:column;align-items:center;padding:24px 20px;gap:14px}
+.quiz-view.on{display:flex}
+#quizInner{width:100%;max-width:520px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.quiz-top-row{display:flex;align-items:center;justify-content:space-between;width:100%}
+.quiz-prog{font-size:11px;color:var(--muted);letter-spacing:.08em}
+.quiz-score{font-size:12px;color:var(--grn);font-weight:600}
+.quiz-q-area{width:100%;background:var(--surf);border:1px solid var(--bdr);border-radius:14px;padding:28px 24px;text-align:center}
+.quiz-q-lbl{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.quiz-q-word{font-size:36px;font-weight:700;color:var(--acc);letter-spacing:-.5px;line-height:1.1}
+.quiz-q-phon{font-size:12px;color:var(--muted);margin-top:6px;font-style:italic}
+.quiz-choices{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%}
+.choice-btn{background:var(--surf);border:2px solid var(--bdr);color:var(--txt);border-radius:10px;padding:14px 12px;cursor:pointer;font-size:12.5px;line-height:1.5;text-align:left;transition:all .15s;min-height:64px;width:100%;word-break:break-word}
+.choice-btn:hover:not(:disabled){border-color:var(--acc);background:var(--acc-s)}
+.choice-btn.correct{border-color:var(--grn)!important;background:rgba(74,255,160,.1);color:var(--grn)}
+.choice-btn.wrong{border-color:var(--red)!important;background:rgba(255,74,106,.09);color:var(--red)}
+.choice-btn:disabled{cursor:default}
+.quiz-next{background:var(--acc);border:none;color:#fff;border-radius:9px;padding:12px 36px;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.04em;opacity:0;pointer-events:none;transition:opacity .2s;align-self:center}
+.quiz-next.on{opacity:1;pointer-events:auto}
+.quiz-empty{text-align:center;color:var(--muted);font-size:13px;line-height:2.2;padding:40px 20px}
+.quiz-finish{text-align:center;padding:40px 20px;width:100%}
+.quiz-finish-score{font-size:52px;font-weight:700;color:var(--acc);line-height:1;margin:10px 0 4px}
+.quiz-finish-lbl{font-size:14px;color:var(--dim)}
+.quiz-restart{background:var(--acc);border:none;color:#fff;border-radius:9px;padding:11px 32px;font-size:13px;font-weight:600;cursor:pointer;margin-top:20px;transition:opacity .15s}
+.quiz-restart:hover{opacity:.85}
+
 /* status bar */
 .sbar{height:30px;background:var(--surf);border-top:1px solid var(--bdr);display:flex;align-items:center;padding:0 14px;gap:8px;font-size:10.5px;color:var(--muted);flex-shrink:0}
 .sdot{width:5px;height:5px;border-radius:50%;background:var(--muted);flex-shrink:0}
@@ -185,6 +211,7 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',-apple-system,
   <div class="hdr-mid">
     <button class="mode-btn on" id="btnPDF">📄 PDF表示</button>
     <button class="mode-btn" id="btnTxt">📝 テキスト</button>
+    <button class="mode-btn" id="btnQuiz">🎯 クイズ</button>
   </div>
 
   <div class="hdr-right">
@@ -267,6 +294,11 @@ body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',-apple-system,
 
     <!-- TEXT VIEW -->
     <div class="txt-view" id="txtView"></div>
+
+    <!-- QUIZ VIEW -->
+    <div class="quiz-view" id="quizView">
+      <div id="quizInner"></div>
+    </div>
 
     <div class="sbar">
       <div class="sdot" id="sdot"></div>
@@ -851,20 +883,126 @@ G('btnZfit').addEventListener('click', function(){
 /* ── Mode Switch ── */
 function showPDFMode(){
   viewMode = 'pdf';
-  G('btnPDF').classList.add('on');    G('btnTxt').classList.remove('on');
+  G('btnPDF').classList.add('on'); G('btnTxt').classList.remove('on'); G('btnQuiz').classList.remove('on');
   G('pdfView').classList.remove('gone');
   G('txtView').classList.remove('on');
-  closePopup(); /* FIX: close popup when switching modes */
+  G('quizView').classList.remove('on');
+  closePopup();
 }
 function showTextMode(){
   viewMode = 'text';
-  G('btnTxt').classList.add('on');    G('btnPDF').classList.remove('on');
+  G('btnTxt').classList.add('on'); G('btnPDF').classList.remove('on'); G('btnQuiz').classList.remove('on');
   G('pdfView').classList.add('gone');
   G('txtView').classList.add('on');
-  closePopup(); /* FIX: close popup when switching modes */
+  G('quizView').classList.remove('on');
+  closePopup();
 }
 G('btnPDF').addEventListener('click', function(){ if(pdfDoc) showPDFMode(); });
 G('btnTxt').addEventListener('click', function(){ if(pdfDoc) showTextMode(); });
+
+/* ── QUIZ ── */
+var quizQuestions = [];
+var quizIdx       = 0;
+var quizScore     = 0;
+var quizAnswered  = false;
+
+function quizShuffle(arr){
+  for(var i=arr.length-1;i>0;i--){
+    var j=Math.floor(Math.random()*(i+1));
+    var t=arr[i];arr[i]=arr[j];arr[j]=t;
+  }
+  return arr;
+}
+function buildQuizQuestions(){
+  var valid=vocab.filter(function(v){ return v.definition; });
+  if(valid.length<4) return [];
+  var pool=quizShuffle(valid.slice());
+  return pool.map(function(item){
+    var others=quizShuffle(pool.filter(function(x){ return x.word!==item.word; }));
+    var choices=quizShuffle(others.slice(0,3).map(function(x){ return x.definition; }).concat([item.definition]));
+    return {word:item.word,phonetic:item.phonetic||'',correct:item.definition,
+            choices:choices,correctIdx:choices.indexOf(item.definition)};
+  });
+}
+function startQuiz(){
+  var valid=vocab.filter(function(v){ return v.definition; });
+  if(valid.length<4){
+    G('quizInner').innerHTML=
+      '<div class="quiz-empty">単語帳に<strong style="color:var(--acc)">4つ以上</strong>の単語を<br>保存してからクイズを始めましょう<br><br>'+
+      '<span style="font-size:11px">現在: '+vocab.length+'語</span></div>';
+    return;
+  }
+  quizQuestions=buildQuizQuestions();
+  quizIdx=0; quizScore=0; quizAnswered=false;
+  renderQuizQ();
+}
+function renderQuizQ(){
+  var q=quizQuestions[quizIdx], total=quizQuestions.length;
+  quizAnswered=false;
+  G('quizInner').innerHTML=
+    '<div class="quiz-top-row">'+
+      '<span class="quiz-prog">'+(quizIdx+1)+' / '+total+'</span>'+
+      '<span class="quiz-score">✓ '+quizScore+'</span>'+
+    '</div>'+
+    '<div class="quiz-q-area">'+
+      '<div class="quiz-q-lbl">この単語の意味は？</div>'+
+      '<div class="quiz-q-word">'+esc(q.word)+'</div>'+
+      (q.phonetic?'<div class="quiz-q-phon">'+esc(q.phonetic)+'</div>':'')+
+    '</div>'+
+    '<div class="quiz-choices">'+
+      q.choices.map(function(c,i){
+        return '<button class="choice-btn" data-cidx="'+i+'">'+esc(c)+'</button>';
+      }).join('')+
+    '</div>'+
+    '<button class="quiz-next" id="quizNextBtn">'+
+      (quizIdx+1>=total?'結果を見る →':'次の問題 →')+
+    '</button>';
+  G('quizInner').querySelectorAll('.choice-btn').forEach(function(btn){
+    btn.addEventListener('click',function(){ quizPick(parseInt(btn.dataset.cidx,10)); });
+  });
+  G('quizNextBtn').addEventListener('click',quizNext);
+}
+function quizPick(idx){
+  if(quizAnswered) return;
+  quizAnswered=true;
+  var q=quizQuestions[quizIdx];
+  if(idx===q.correctIdx) quizScore++;
+  G('quizInner').querySelectorAll('.choice-btn').forEach(function(btn){
+    var cidx=parseInt(btn.dataset.cidx,10);
+    btn.disabled=true;
+    if(cidx===q.correctIdx) btn.classList.add('correct');
+    else if(cidx===idx)     btn.classList.add('wrong');
+  });
+  var nb=G('quizNextBtn');
+  if(nb){ nb.textContent=(quizIdx+1>=quizQuestions.length)?'結果を見る →':'次の問題 →'; nb.classList.add('on'); }
+}
+function quizNext(){
+  quizIdx++;
+  if(quizIdx>=quizQuestions.length){ quizFinish(); return; }
+  renderQuizQ();
+}
+function quizFinish(){
+  var total=quizQuestions.length, pct=Math.round(quizScore/total*100);
+  G('quizInner').innerHTML=
+    '<div class="quiz-finish">'+
+      '<div style="font-size:44px">'+(pct>=80?'🎉':pct>=60?'👍':'📚')+'</div>'+
+      '<div class="quiz-finish-score">'+quizScore+' / '+total+'</div>'+
+      '<div class="quiz-finish-lbl">正解率 '+pct+'%</div>'+
+      '<button class="quiz-restart" id="quizRestartBtn">もう一度</button>'+
+    '</div>';
+  G('quizRestartBtn').addEventListener('click',startQuiz);
+}
+function showQuizMode(){
+  viewMode='quiz';
+  G('btnQuiz').classList.add('on');
+  G('btnPDF').classList.remove('on'); G('btnTxt').classList.remove('on');
+  G('pdfView').classList.add('gone');
+  G('txtView').classList.remove('on');
+  G('quizView').classList.add('on');
+  closePopup();
+  startQuiz();
+}
+G('btnQuiz').addEventListener('click', showQuizMode);
 
 /* ── Init ── */
 renderVocab();
