@@ -190,6 +190,29 @@ def get_all_entry_links(session: requests.Session, start_page: int = 1) -> list[
 
 def _parse_date(soup: BeautifulSoup) -> str:
     """記事ページから日付文字列 (YYYY-MM-DD) を返す。"""
+    import json as _json
+
+    # 1) JSON-LD
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = _json.loads(script.string or "")
+            for key in ("datePublished", "dateCreated", "dateModified"):
+                val = data.get(key, "")
+                if val:
+                    return val[:10]
+        except Exception:
+            pass
+
+    # 2) meta タグ
+    for meta in soup.find_all("meta"):
+        prop = meta.get("property", "") or meta.get("name", "")
+        if any(k in prop for k in ("published_time", "date", "created")):
+            content = meta.get("content", "")
+            m = re.search(r"(\d{4})-(\d{2})-(\d{2})", content)
+            if m:
+                return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+
+    # 3) time タグ・class 属性
     for sel in ["time[datetime]", ".skin-entryDate time", "time", "[class*='date']"]:
         elem = soup.select_one(sel)
         if not elem:
@@ -201,6 +224,7 @@ def _parse_date(soup: BeautifulSoup) -> str:
         m = re.search(r"(\d{4})[年/\-](\d{1,2})[月/\-](\d{1,2})", text)
         if m:
             return f"{m.group(1)}-{m.group(2).zfill(2)}-{m.group(3).zfill(2)}"
+
     return ""
 
 
@@ -228,16 +252,37 @@ def _apply_patterns(text: str, patterns: list[str]) -> list[str]:
     return results
 
 
+def _join_split_words(text: str) -> str:
+    """画像等で分断された英単語を結合する（例: 'Welcome S\nong' → 'Welcome Song'）。"""
+    lines = text.split("\n")
+    result = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        # 行末が英字で終わり、次行が小文字英字で始まる → 語が分断されている
+        if (i + 1 < len(lines)
+                and line
+                and re.search(r"[A-Za-z]$", line)
+                and re.match(r"^[a-z]", lines[i + 1].strip())):
+            result.append(line + lines[i + 1].strip())
+            i += 2
+        else:
+            result.append(line)
+            i += 1
+    return "\n".join(result)
+
+
 def extract_books_and_games(soup: BeautifulSoup, debug: bool = False) -> tuple[list[str], list[str]]:
     """記事本文から絵本タイトルと手遊び名を抽出する。"""
-    # 本文要素の特定
     body = (
         soup.select_one(".skin-entryBody")
         or soup.select_one("[class*='entryBody']")
         or soup.select_one("article")
         or soup.body
     )
-    text = body.get_text("\n", strip=True) if body else ""
+    raw_text = body.get_text("\n", strip=True) if body else ""
+    # 分断単語を結合してから処理
+    text = _join_split_words(raw_text)
 
     if debug:
         log("─── 本文テキスト（先頭600字） ───")
@@ -247,26 +292,36 @@ def extract_books_and_games(soup: BeautifulSoup, debug: bool = False) -> tuple[l
     books = _apply_patterns(text, BOOK_PATTERNS)
     games = _apply_patterns(text, GAME_PATTERNS)
 
-    # ─ 追加: 「手遊び」が含まれる行の次行もゲーム候補にする ─
     lines = text.split("\n")
     for i, line in enumerate(lines):
-        if re.search(r"手遊び|てあそび|finger.?play", line, re.IGNORECASE):
-            # 同一行の「：」以降
-            m = re.search(r"[：:→]\s*(.+)", line)
+        line_s = line.strip()
+
+        # ── 絵本: 「本日の〇冊目」「今日の〇冊目」の次行 ──
+        if re.search(r"(?:本日|今日)の\d+冊目", line_s):
+            if i + 1 < len(lines):
+                title = lines[i + 1].strip()
+                if title and re.search(r"[A-Za-z]", title):
+                    books.append(_clean(title))
+
+        # ── 手遊び: 「手遊び歌」「今月の手遊び」などの次行 ──
+        if re.search(r"手遊び|てあそび|finger.?play", line_s, re.IGNORECASE):
+            # 同一行の「：→」以降
+            m = re.search(r"[：:→]\s*(.+)", line_s)
             if m:
                 val = _clean(m.group(1))
                 if val:
                     games.append(val)
-            # 次行（短い名称のみ候補にする。長い文や日本語主体の行は除外）
+            # 次行（英語または短い日本語タイトルのみ）
             if i + 1 < len(lines):
                 next_line = lines[i + 1].strip()
-                # 日本語が多すぎる行・長すぎる行は除外
                 jp_ratio = sum(1 for c in next_line if "　" <= c <= "鿿") / max(len(next_line), 1)
                 if next_line and len(next_line) < 40 and jp_ratio < 0.6:
                     val = _clean(next_line)
                     if val:
                         games.append(val)
 
+    # 単語1つだけ（"sat" など）は絵本タイトルとして除外
+    books = [b for b in books if len(b.split()) >= 2 or (len(b) >= 4 and b[0].isupper())]
     # 重複除去（順序保持）
     books = list(dict.fromkeys(b for b in books if b))
     games = list(dict.fromkeys(g for g in games if g))
