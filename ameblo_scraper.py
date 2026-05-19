@@ -59,16 +59,12 @@ HEADERS = {
 #   本日の絵本 / 今日の絵本 → 次行や同行の英語タイトル
 #
 BOOK_PATTERNS = [
-    # 明示的なラベル付き
-    r'(?:絵本|今日の絵本|本日の絵本|読んだ絵本|英語絵本)[：:\s]*[「『]?([A-Za-z][A-Za-z0-9\s\'\-,!?\.&:]+[A-Za-z\?!])',
-    # 鍵括弧・二重鍵括弧の中の英語
-    r'[「『]([A-Z][A-Za-z0-9\s\'\-,!?\.&:]+)[」』]',
-    # 行頭に☆★●◆◎○ + 英語タイトル
-    r'^[\s☆★●◆◎○・►▶\-\*]+([A-Z][A-Za-z0-9\s\'\-,!?\.&:]{3,})',
+    # 明示的なラベル付き（絵本：Title）
+    r'(?:絵本|今日の絵本|本日の絵本|読んだ絵本|英語絵本)[：:\s]*[「『]?([A-Za-z][A-Za-z0-9 \'\-,!?\.&:]+[A-Za-z\?!])',
+    # 鍵括弧・二重鍵括弧の中の英語（「Title」『Title』）
+    r'[「『]([A-Z][A-Za-z0-9 \'\-,!?\.&:]+)[」』]',
     # "タイトル:" 系
-    r'(?:タイトル|Title)[：:\s]+([A-Za-z][A-Za-z0-9\s\'\-,!?\.&:]+)',
-    # 単体で英語大文字始まりの行（4語以下で句読点なし = タイトルらしい）
-    r'^([A-Z][a-z]+(?:\s+[A-Za-z]+){0,6})$',
+    r'(?:タイトル|Title)[：:\s]+([A-Za-z][A-Za-z0-9 \'\-,!?\.&:]+)',
 ]
 
 # ─── 手遊び抽出パターン ──────────────────────────────────────────────────────
@@ -253,18 +249,23 @@ def _apply_patterns(text: str, patterns: list[str]) -> list[str]:
 
 
 def _join_split_words(text: str) -> str:
-    """画像等で分断された英単語を結合する（例: 'Welcome S\nong' → 'Welcome Song'）。"""
+    """画像等で分断された英単語を結合する（例: 'Welcome S\nong' → 'Welcome Song'）。
+
+    最後の「単語」が1〜2文字のときだけ結合する（"S" + "ong" は結合、"Dad" + "sat" は結合しない）。
+    """
     lines = text.split("\n")
     result = []
     i = 0
     while i < len(lines):
         line = lines[i]
-        # 行末が英字で終わり、次行が小文字英字で始まる → 語が分断されている
-        if (i + 1 < len(lines)
-                and line
-                and re.search(r"[A-Za-z]$", line)
-                and re.match(r"^[a-z]", lines[i + 1].strip())):
-            result.append(line + lines[i + 1].strip())
+        last_word = re.search(r"(\S+)$", line)
+        next_line = lines[i + 1].strip() if i + 1 < len(lines) else ""
+        # 最後の単語が1〜2文字 かつ 次行が小文字で始まる → 語が分断されている
+        if (last_word
+                and len(last_word.group(1)) <= 2
+                and next_line
+                and re.match(r"^[a-z]", next_line)):
+            result.append(line + next_line)
             i += 2
         else:
             result.append(line)
