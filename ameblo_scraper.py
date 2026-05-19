@@ -166,16 +166,11 @@ def get_all_entry_links(session: requests.Session, start_page: int = 1) -> list[
 
         entries = _parse_entry_list(soup)
         if not entries:
-            log("  → 記事が見つかりません。最終ページか構造が変わった可能性があります。")
+            log("  → 記事が見つかりません。最終ページに到達。")
             break
 
         log(f"  → {len(entries)} 件取得")
         all_entries.extend(entries)
-
-        # 次ページリンク確認
-        next_page = soup.find("a", string=re.compile(r"次|next|›|»|▶", re.IGNORECASE))
-        if not next_page:
-            break
 
         page += 1
         time.sleep(DELAY_SEC)
