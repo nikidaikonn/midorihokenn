@@ -147,6 +147,7 @@ def _parse_entry_list(soup: BeautifulSoup) -> list[dict]:
 
 def get_all_entry_links(session: requests.Session, start_page: int = 1) -> list[dict]:
     all_entries = []
+    seen_urls: set[str] = set()
     page = start_page
 
     while True:
@@ -165,12 +166,17 @@ def get_all_entry_links(session: requests.Session, start_page: int = 1) -> list[
             raise
 
         entries = _parse_entry_list(soup)
-        if not entries:
-            log("  → 記事が見つかりません。最終ページに到達。")
+
+        # 新規URLが1件もなければ最終ページ（Amebloは存在しないページでも200を返す）
+        new_entries = [e for e in entries if e["url"] not in seen_urls]
+        if not new_entries:
+            log("  → 新規記事なし。最終ページに到達。")
             break
 
-        log(f"  → {len(entries)} 件取得")
-        all_entries.extend(entries)
+        log(f"  → {len(new_entries)} 件取得")
+        for e in new_entries:
+            seen_urls.add(e["url"])
+        all_entries.extend(new_entries)
 
         page += 1
         time.sleep(DELAY_SEC)
