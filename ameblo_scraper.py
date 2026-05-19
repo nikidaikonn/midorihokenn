@@ -367,6 +367,8 @@ def write_csv(results: list[dict], path: str) -> None:
 
         for ym in sorted(monthly.keys()):
             for r in sorted(monthly[ym], key=lambda x: x.get("date", "")):
+                if not r["books"] and not r["games"]:
+                    continue  # 絵本・手遊びどちらも空＝お知らせ記事は除外
                 books_str = " / ".join(r["books"]) if r["books"] else ""
                 games_str = " / ".join(r["games"]) if r["games"] else ""
                 w.writerow([ym, r["date"], r["title"], books_str, games_str, r["url"]])
